@@ -8,14 +8,15 @@ import os
 import config as conf
 import common as c
 import loginterp
-from scipy.interpolate import interp1d 
+from scipy.interpolate import interp1d, interp2d
 from astropy.io import fits
 import camb
 from camb import model
 from scipy.integrate import simps
 from math import lgamma
+from spectra import save_fft_weights, save_fft, limber, beyond_limber, fftlog_integral
 
-Clvv = loginterp.log_interpolate_matrix(c.load(c.get_basic_conf(conf),'Cl_vr_vr_lmax=6144', dir_base = 'Cls/'+c.direc('vr','vr',conf)), c.load(c.get_basic_conf(conf),'L_sample_lmax=6144', dir_base = 'Cls'))[:6144,0,0]
+#Clvv = loginterp.log_interpolate_matrix(c.load(c.get_basic_conf(conf),'Cl_vr_vr_lmax=6144', dir_base = 'Cls/'+c.direc('vr','vr',conf)), c.load(c.get_basic_conf(conf),'L_sample_lmax=6144', dir_base = 'Cls'))[:6144,0,0]
 
 outdir = 'plots/analysis/paper_analysis_latest/'
 if not os.path.exists(outdir):
@@ -47,12 +48,12 @@ class Maps(object):
         #self.map_tags = ('SMICA', '100GHz', '143GHz', '217GHz', '100GHz-SMICA', '143GHz-SMICA', '217GHz-SMICA', 'unWISE')
         self.map_tags = ('SMICA', 'unWISE')
         self.input_maps = {'SMICA_input' : hp.reorder(fits.open('data/planck_data_testing/maps/COM_CMB_IQU-smica_2048_R3.00_full.fits')[1].data['I_STOKES_INP'], n2r=True),
-                           '100GHz' : hp.reorder(fits.open('data/planck_data_testing/maps/HFI_SkyMap_100_2048_R3.01_full.fits')[1].data['I_STOKES'], n2r=True),
-                           '143GHz' : hp.reorder(fits.open('data/planck_data_testing/maps/HFI_SkyMap_143_2048_R3.01_full.fits')[1].data['I_STOKES'], n2r=True),
-                           '217GHz' : hp.reorder(fits.open('data/planck_data_testing/maps/HFI_SkyMap_217_2048_R3.01_full.fits')[1].data['I_STOKES'], n2r=True),
-                           '100GHz-SMICA' : fits.open('data/planck_data_testing/maps/HFI_CompMap_Foregrounds-smica-100_R3.00.fits')[1].data['INTENSITY'].flatten(),
-                           '143GHz-SMICA' : fits.open('data/planck_data_testing/maps/HFI_CompMap_Foregrounds-smica-143_R3.00.fits')[1].data['INTENSITY'].flatten(),
-                           '217GHz-SMICA' : fits.open('data/planck_data_testing/maps/HFI_CompMap_Foregrounds-smica-217_R3.00.fits')[1].data['INTENSITY'].flatten(),
+                           #'100GHz' : hp.reorder(fits.open('data/planck_data_testing/maps/HFI_SkyMap_100_2048_R3.01_full.fits')[1].data['I_STOKES'], n2r=True),
+                           #'143GHz' : hp.reorder(fits.open('data/planck_data_testing/maps/HFI_SkyMap_143_2048_R3.01_full.fits')[1].data['I_STOKES'], n2r=True),
+                           #'217GHz' : hp.reorder(fits.open('data/planck_data_testing/maps/HFI_SkyMap_217_2048_R3.01_full.fits')[1].data['I_STOKES'], n2r=True),
+                           #'100GHz-SMICA' : fits.open('data/planck_data_testing/maps/HFI_CompMap_Foregrounds-smica-100_R3.00.fits')[1].data['INTENSITY'].flatten(),
+                           #'143GHz-SMICA' : fits.open('data/planck_data_testing/maps/HFI_CompMap_Foregrounds-smica-143_R3.00.fits')[1].data['INTENSITY'].flatten(),
+                           #'217GHz-SMICA' : fits.open('data/planck_data_testing/maps/HFI_CompMap_Foregrounds-smica-217_R3.00.fits')[1].data['INTENSITY'].flatten(),
                            'unWISE_input' : fits.open('data/unWISE/numcounts_map1_2048-r1-v2_flag.fits')[1].data['T'].flatten() }
         self.beams = { 'SMICA' : hp.gauss_beam(fwhm=np.radians(5/60), lmax=6143),
                        '100GHz' : hp.gauss_beam(fwhm=np.radians(9.66/60), lmax=6143),
@@ -60,25 +61,27 @@ class Maps(object):
                        '217GHz' : hp.gauss_beam(fwhm=np.radians(5.01/60), lmax=6143) }
         self.beams['100GHz'][4001:] = self.beams['100GHz'][4000]  # Numerical trouble for healpix for beams that blow up at large ell. Sufficient to flatten out at high ell above where the 1/TT filter peaks
         print('Adding Gaussian noise to CMB maps')
-        self.input_maps['SMICA'] = self.input_maps['SMICA_input'] + hp.synfast(np.repeat([hp.anafast(self.input_maps['SMICA_input'], lmax=2500)[-1]], 6144), 2048)
+        #self.input_maps['SMICA'] = self.input_maps['SMICA_input'] + hp.synfast(np.repeat([hp.anafast(self.input_maps['SMICA_input'], lmax=2500)[-1]], 6144), 2048)
         print('Inpainting unWISE map in masked regions')
         ngal_per_pix = self.input_maps['unWISE_input'][np.where(self.mask_map!=0)].sum() / np.where(self.mask_map!=0)[0].size
         ngal_fill = np.random.poisson(lam=ngal_per_pix, size=np.where(self.mask_map==0)[0].size)
         self.input_maps['unWISE'] = self.input_maps['unWISE_input'].copy()
         self.input_maps['unWISE'][np.where(self.mask_map==0)] = ngal_fill
         print('Masking and debeaming temperature maps')
-        self.map_alms = { tag : self.get_alms(tag) for tag in self.map_tags}
-        self.maps = { tag : self.alm2map(self.map_alms, tag) for tag in self.map_tags}
-        self.Cls = { tag : self.get_Cls(self.map_alms, tag) for tag in self.map_tags}
+        #self.map_alms = { tag : self.get_alms(tag) for tag in self.map_tags}
+        #self.maps = { tag : self.alm2map(self.map_alms, tag) for tag in self.map_tags}
+        #self.Cls = { tag : self.get_Cls(self.map_alms, tag) for tag in self.map_tags}
         print('Generating Gaussian realizations of maps')
-        self.gaussian_alms = { tag : self.get_alms(tag, gauss=True) for tag in self.map_tags}
-        self.gaussian_maps = { tag : self.alm2map(self.gaussian_alms, tag) for tag in self.map_tags}
-        self.gaussian_Cls = { tag : self.get_Cls(self.gaussian_alms, tag) for tag in self.map_tags}  # Because these aren't the same. Somehow masking the gaussian realization changes the underlying power spectrum??
+        #self.gaussian_alms = { tag : self.get_alms(tag, gauss=True) for tag in self.map_tags}
+        #self.gaussian_maps = { tag : self.alm2map(self.gaussian_alms, tag) for tag in self.map_tags}
+        #self.gaussian_Cls = { tag : self.get_Cls(self.gaussian_alms, tag) for tag in self.map_tags}  # Because these aren't the same. Somehow masking the gaussian realization changes the underlying power spectrum??
         print('Handling unWISE map and generating Poisson realization')
+        self.maps = {}
+        self.Cls = {}
         self.maps['unWISE'] = self.input_maps['unWISE'].copy()  # Harmonic transform not friendly to integer pixel values
         self.Cls['unWISE'] = hp.anafast(self.maps['unWISE'])
-        self.gaussian_maps['unWISE'] = np.random.poisson(lam=ngal_per_pix, size=self.maps['unWISE'].size)
-        self.gaussian_Cls['unWISE'] = hp.anafast(self.gaussian_maps['unWISE'])
+        #self.gaussian_maps['unWISE'] = np.random.poisson(lam=ngal_per_pix, size=self.maps['unWISE'].size)
+        #self.gaussian_Cls['unWISE'] = hp.anafast(self.gaussian_maps['unWISE'])
 
 
 
@@ -93,7 +96,7 @@ class Estimator(object):
         me = 1.14
         gasfrac = 0.9
         omgh2 = gasfrac* 0.049*0.68**2
-        ne0_SI = chi*omgh2 * 3.*(H100_SI**2.)/mProton_SI/8./np.pi/G_SI/me                   
+        ne0_SI = self.a(z)**-3 * chi*omgh2 * 3.*(H100_SI**2.)/mProton_SI/8./np.pi/G_SI/me    # Modified from spectra.py to have a 1/a^3 dependence                
         return ne0_SI
     def __init__(self):
         self.reconstructions = {}
@@ -103,6 +106,9 @@ class Estimator(object):
         self.lssmaps_filtered = {}
         self.sigma_T = 6.6524587e-29  # m^2
         self.mperMpc = 3.086e22  # metres per megaparsec
+        self.zmin = conf.z_min
+        self.zmax = conf.z_max
+        self.zs = np.logspace(np.log10(self.zmin),np.log10(self.zmax),100)
         self.cambpars = camb.CAMBparams()
         self.cambpars.set_cosmology(H0 = conf.H0, ombh2=conf.ombh2, \
                                                   omch2=conf.omch2, mnu=conf.mnu , \
@@ -112,13 +118,35 @@ class Estimator(object):
         self.cambpars.NonLinear = model.NonLinear_both
         self.cambpars.max_eta_k = 14000.0*conf.ks_hm[-1]
         self.cosmology_data = camb.get_background(self.cambpars)
-        self.zmin = conf.z_min
-        self.zmax = conf.z_max
+        self.cambpars.set_matter_power(redshifts=self.zs.tolist(), kmax=conf.ks_hm[-1], k_per_logint=20)
         self.bin_width = (self.cosmology_data.comoving_radial_distance(self.zmax)-self.cosmology_data.comoving_radial_distance(self.zmin)) * self.mperMpc
+        #### ### 2) Clgg = Pmm * bias(z) * bias(z) + shotnoise (shotnoise = 9.2*10**(-8) )
+        with open('data/unWISE/Bandpowers_Auto_Sample1.dat','rb') as FILE:
+            lines = FILE.readlines()
+        self.alex_ells = np.array(lines[0].decode('utf-8').split(' ')).astype('float')[:-1]
+        self.alex_clgg = np.array(lines[1].decode('utf-8').split(' ')).astype('float')[:-1]
+        self.alex_lssspec = interp1d(self.alex_ells,self.alex_clgg, bounds_error=False,fill_value='extrapolate')(np.arange(6144))
+        unWISE_bluesample_bias = (0.8+1.2*conf.zs_hm)[:,np.newaxis]                
+        self.cambpars.set_matter_power(redshifts=conf.zs_hm.tolist(), kmax=conf.ks_hm[-1], k_per_logint=20)
+        PK_lin    = camb.get_matter_power_interpolator(self.cambpars, nonlinear=False, hubble_units=False, k_hunit=False, kmax=conf.ks_hm[-1], zmax=conf.zs_hm[-1])
+        PK_nonlin = camb.get_matter_power_interpolator(self.cambpars, nonlinear=True, hubble_units=False, k_hunit=False, kmax=conf.ks_hm[-1], zmax=conf.zs_hm[-1])
+        Pmm_lin_sampled    = PK_lin.P(conf.zs_hm, conf.ks_hm, grid=True)
+        Pmm_nonlin_sampled = PK_nonlin.P(conf.zs_hm, conf.ks_hm, grid=True)
+        Pgg_lin_sampled    = Pmm_lin_sampled    * unWISE_bluesample_bias**2
+        Pgg_nonlin_sampled = Pmm_nonlin_sampled * unWISE_bluesample_bias**2
+        Pgg_lin  = interp2d(conf.ks_hm, conf.zs_hm, Pgg_lin_sampled,    kind='linear', bounds_error=False, fill_value=0.0)
+        Pgg_full = interp2d(conf.ks_hm, conf.zs_hm, Pgg_nonlin_sampled, kind='linear', bounds_error=False, fill_value=0.0)
+        c.dump(c.get_basic_conf(conf), Pgg_full, 'p_gg_f1=None_f2 =None', dir_base = 'pks')
+        c.dump(c.get_basic_conf(conf), Pgg_lin , 'p_linear_gg_f1=None_f2 =None', dir_base = 'pks')
+        save_fft_weights(tag='g', fq=None)
+        for l, ell in enumerate(self.alex_ells):
+            save_fft(tag='g',fq=None,b=0,ell=ell)
+        ###
         zrange = np.where(np.logical_and(conf.zs_hm>=self.zmin, conf.zs_hm<=self.zmax))[0]
         zmin_ind = zrange.min()
         zmax_ind = zrange.max()
         a_integrated = np.abs(simps(conf.zs_hm[zmin_ind:zmax_ind], self.a(conf.zs_hm[zmin_ind:zmax_ind])))
+        ### 3) Cltaug = Pmm * K * bias(z)
         self.K = -self.sigma_T * self.bin_width * a_integrated * self.ne0z(self.zmax)  # conversion from delta to tau dot, unitless conversion
     def get_recon_tag(self, Ttag, gtag, Tgauss, ggauss):
         return Ttag + '_gauss=' + str(Tgauss) + '__' + gtag + '_gauss=' + str(ggauss)
@@ -199,17 +227,40 @@ def twopt(recon_Cls, theory_noise, FSKY, plottitle, filename, lmaxplot=700, conv
     plt.savefig(outdir + filename)
     plt.close('all')
 
-maplist = Maps()
-estim = Estimator()
 
-for Ttag in maplist.map_tags[:-1]:
-    gtag = maplist.map_tags[-1]
-    for Tgauss in (True, False):
-        for ggauss in (True, False):
-            print('Reconstructing %s x %s  [Tgauss=%s, lssgauss=%s]' % (Ttag, gtag, Tgauss, ggauss))
-            estim.reconstruct(maplist, Ttag, gtag, Tgauss, ggauss)
-            recon_tag = estim.get_recon_tag(Ttag, gtag, Tgauss, ggauss)
-            twopt(estim.Cls[recon_tag], estim.noises[recon_tag], maplist.fsky, recon_tag, recon_tag)
+
+if __name__=='__main__':
+    maplist = Maps()
+    estim = Estimator()
+    test= np.zeros(estim.alex_ells.size)
+    chis_interp = np.linspace(estim.cosmology_data.comoving_radial_distance(1e-2), estim.cosmology_data.comoving_radial_distance(conf.z_max+1.1), 1000)   
+    for l, ell in enumerate(estim.alex_ells):
+        pf_interp = limber(c.load(c.get_basic_conf(conf), 'p_gg_f1=None_f2 =None', dir_base = 'pks'),chis_interp,ell)
+        pl_interp = limber(c.load(c.get_basic_conf(conf), 'p_linear_gg_f1=None_f2 =None', dir_base = 'pks'),chis_interp,ell)
+        pk_limb = interp1d(chis_interp,pf_interp-pl_interp, kind = 'linear',bounds_error=False,fill_value=0.0)
+        if ell < 30:
+             pk_limb = None
+        test[l] = beyond_limber('g','g',None,None,0,0,fftlog_integral('g',None,0,ell)[0],ell,pk_limb)
+
+    manual_clgg = interp1d(estim.alex_ells, test, bounds_error=False, fill_value='extrapolate')(np.arange(6144)) + 9.2e-8
+    plt.figure()
+    plt.loglog(estim.alex_lssspec*(maplist.maps['unWISE'].sum()/maplist.mask_map.size)**2,label='Alex\'s Clgg')
+    plt.loglog(maplist.Cls['unWISE'], label='Mask-region inpainted unWISE map')
+    plt.loglog(manual_clgg*(maplist.maps['unWISE'].sum()/maplist.mask_map.size)**2, label='CAMB-based Clgg')
+    plt.xlabel(r'$\ell$')
+    plt.ylabel(r'$C_\ell^{\mathrm{gg}}$')
+    plt.title('unWISE Galaxy Spectrum')
+    plt.legend()
+    plt.savefig(outdir + 'clgg_1bin')
+
+# for Ttag in maplist.map_tags[:-1]:
+#     gtag = maplist.map_tags[-1]
+#     for Tgauss in (True, False):
+#         for ggauss in (True, False):
+#             print('Reconstructing %s x %s  [Tgauss=%s, lssgauss=%s]' % (Ttag, gtag, Tgauss, ggauss))
+#             estim.reconstruct(maplist, Ttag, gtag, Tgauss, ggauss)
+#             recon_tag = estim.get_recon_tag(Ttag, gtag, Tgauss, ggauss)
+#             twopt(estim.Cls[recon_tag], estim.noises[recon_tag], maplist.fsky, recon_tag, recon_tag)
 
 
 ### Would be nice to do multiple realizations to see the cosmic variance error bars

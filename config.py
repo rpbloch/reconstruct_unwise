@@ -6,7 +6,7 @@ import numpy as np
 z_max = 1.60 #highest redshift.
 z_min = 0.01 #lowest redshift.
 
-N_bins = 8 #number of red shift bins, uniform in conformal distance.
+N_bins = 1 #number of red shift bins, uniform in conformal distance.
 
 ################ halomodel
 
@@ -18,7 +18,7 @@ log_kmax = 2
 log_kmin = -5
 k_res = 1000
 ks_hm = np.logspace(log_kmin,log_kmax,num=k_res )     #k-sampling 
-zs_hm = np.logspace(-2,np.log10(6),150) #z-sampling 
+zs_hm = np.logspace(np.log10(z_min),np.log10(z_max),150) #z-sampling 
 
 ################ LSS 
 

@@ -312,7 +312,7 @@ def save_fft(tag,fq,b,ell):
     
     F = ffts_tracer(tag, fq, b, ell)
     #we will rewrite for different ells
-    c.dump(basic_conf, F, 'f_'+tag+'_fq='+str(fq)+'_b='+str(b), dir_base = 'ffts')
+    c.dump(basic_conf, F, 'f_'+tag+'_fq='+str(fq)+'_b='+str(b)+'_ell='+str(ell), dir_base = 'ffts')
     pass
 
     
@@ -530,8 +530,8 @@ def beyond_limber(tag1, tag2, fq1, fq2, b1, b2, k, ell, pk_limb):
         term1  = limber_integration(tag1, tag2, fq1, fq2, b1, b2, ell, pk_limb)
     
     pk = c.load(basic_conf, 'p_linear_'+c.retag(tag1)+c.retag(tag2)+'_f1='+str(fq1)+'_f2 ='+str(fq2), dir_base = 'pks')
-    fft1 = c.load(basic_conf, 'f_'+tag1+'_fq='+str(fq1)+'_b='+str(b1), dir_base = 'ffts')
-    fft2 = c.load(basic_conf, 'f_'+tag2+'_fq='+str(fq2)+'_b='+str(b2), dir_base = 'ffts')  
+    fft1 = c.load(basic_conf, 'f_'+tag1+'_fq='+str(fq1)+'_b='+str(b1)+'_ell='+str(ell), dir_base = 'ffts')
+    fft2 = c.load(basic_conf, 'f_'+tag2+'_fq='+str(fq2)+'_b='+str(b2)+'_ell='+str(ell), dir_base = 'ffts')  
     
     #int_term2 = fft1*fft2*np.sqrt(pk(k,zc_1)*pk(k,zc_2))/k
     int_term2 = fft1*fft2*pk(k,conf.zs_hm[0])/k

@@ -486,8 +486,8 @@ twopt(Cl_test4, Noise_test4, fsky, r'Power Spectrum of gauss(T[SMICAGHz]) $\time
 with open('data/unWISE/Bandpowers_Auto_Sample1.dat','rb') as FILE:
     lines = FILE.readlines()
 
-alex_ells = np.array(lines[0].decode('utf-8').split(' ')).astype('float')
-alex_clgg = np.array(lines[1].decode('utf-8').split(' ')).astype('float')
+alex_ells = np.array(lines[0].decode('utf-8').split(' ')).astype('float')[:-1]
+alex_clgg = np.array(lines[1].decode('utf-8').split(' ')).astype('float')[:-1]
 lssspec = interp1d(alex_ells,alex_clgg, bounds_error=False,fill_value='extrapolate')(np.arange(6144))
 
 fig, (ax1, ax2) = plt.subplots(1,2,figsize=(14,6))
