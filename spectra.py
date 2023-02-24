@@ -50,7 +50,7 @@ def ne0z(z):
     me = 1.14
     gasfrac = 0.9
     omgh2 = gasfrac* conf.ombh2
-    ne0_SI = ((1+z)**3)*chi*omgh2 * 3.*(H100_SI**2.)/mProton_SI/8./np.pi/G_SI/me                   
+    ne0_SI = chi*omgh2 * 3.*(H100_SI**2.)/mProton_SI/8./np.pi/G_SI/me                   
     return ne0_SI
 
 
