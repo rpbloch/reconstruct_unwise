@@ -14,25 +14,14 @@ import os
 import config as conf
 import common as c
 import loginterp
-from scipy.interpolate import interp1d, interp2d
+from scipy.interpolate import interp1d
 from astropy.io import fits
 import camb
 from camb import model
 from scipy.integrate import simps
 from math import lgamma
 import pickle
-from spectra import fftlog_integral, save_fft_weights, save_fft, limber, beyond_limber
-
-sigma_T = 6.65245871e-29  # m^2
-metres_per_megaparsec = 3.086e22
-G_SI = 6.674e-11
-mProton_SI = 1.673e-27
-H100_SI = 3.241e-18
-thompson_SI = 6.6524e-29
-
-outdir = 'plots/analysis/paper_analysis_latest/'
-if not os.path.exists(outdir):
-    os.makedirs(outdir)
+from copy import deepcopy
 
 class Maps(object):
     def get_alms(self, tag, gauss=False):
@@ -324,60 +313,6 @@ def plot_gg_tg_comparison(rc1, rc2, tn1, tn2, FSKY, plottitle, filename, lmaxplo
   
 
 
-def run_case(caseflag, gwindow_orig):
-    maplist = pickle.load(open('./maplist.p', 'rb'))
-    delta_to_g = maplist.maps['unWISE'].sum() / maplist.maps['unWISE'].size
-    estim = Estimator()
-    csm = Cosmology()
-    csm.compute_Cls(ngbar=delta_to_g, gwindow_orig=gwindow_orig)
-    if caseflag == 'hybrid':
-        csm.Clmm_as_gg = csm.Clmm*delta_to_g**2
-        csm.Clgg = np.where(csm.Clmm_as_gg > csm.Clgg, csm.Clmm_as_gg, csm.Clgg)
-        csm.Cltaudg = ((csm.Clgg/delta_to_g**2) - 9.2e-8) * csm.get_limber_window('taud',avg=True,gwindow_orig=gwindow_orig) * delta_to_g / csm.get_limber_window('g',avg=True,gwindow_orig=gwindow_orig)
-        csm.Cltaudtaud = ((csm.Clgg/delta_to_g**2)-9.2e-8)*csm.get_limber_window('taud',avg=True,gwindow_orig=gwindow_orig)**2/csm.get_limber_window('g',avg=True,gwindow_orig=gwindow_orig)**2
-    maplist.Cls['unWISE'] = csm.Clgg.copy()
-    maplist.gaussian_Cls['unWISE'] = csm.Clgg.copy()
-    tg_gg_offset = csm.get_limber_window('taud', avg=True, gwindow_orig=gwindow_orig) / csm.get_limber_window('g', avg=True, gwindow_orig=gwindow_orig) / delta_to_g
-    for Tgauss in (True, False):
-        for ggauss in (True, False):
-            for tg_is_gg in (True, False):
-                if tg_is_gg:
-                    cltaudg = csm.Clgg * tg_gg_offset
-                    cltaudtaud = csm.Clgg * tg_gg_offset**2
-                else:
-                    cltaudg = csm.Cltaudg.copy()
-                    cltaudtaud = csm.Cltaudtaud.copy()
-                recon_tag = estim.get_recon_tag('SMICA', 'unWISE', Tgauss, ggauss, tg_is_gg, gwindow_orig, caseflag)
-                estim.reconstruct(maplist, 'SMICA', 'unWISE', Tgauss, ggauss, cltaudg, recon_tag)
-                plt.figure()
-                plt.loglog(maplist.Cls['unWISE'], label='Map Cls')
-                plt.loglog(alex_lssspec*delta_to_g**2, label='Alex\'s Clgg')
-                plt.loglog(csm.Clgg, label='Clgg')
-                plt.loglog(cltaudg**2/cltaudtaud, label=r'${C_\ell^{\dot{\tau}\mathrm{g}^2}} / C_\ell^{\dot{\tau}\dot{\tau}}$', ls='--')
-                plt.loglog(csm.Clmm*delta_to_g**2, label='Clmm')
-                plt.xlabel(r'$\ell$')
-                plt.ylabel(r'$C_\ell^{\mathrm{Xg}}$')
-                plt.ylim([plt.ylim()[0], 0.02])
-                plt.legend()
-                plt.savefig(outdir + 'galspec_' + recon_tag + '.png')
-                twopt_bandpowers(estim.Cls[recon_tag],
-                                 estim.noises[recon_tag],
-                                 maplist.fsky,
-                                 'SMICA x unWISE   [%s x %s]'%('real' if not Tgauss else 'gauss', 'real' if not ggauss else 'gauss'),
-                                 'recon_SMICAxunWISE_'+recon_tag,
-                                 lmaxplot=4000)
-            rtag_tg_is_gg = estim.get_recon_tag('SMICA', 'unWISE', Tgauss, ggauss, True, gwindow_orig, caseflag)
-            rtag_tg_isnt_gg = estim.get_recon_tag('SMICA', 'unWISE', Tgauss, ggauss, False, gwindow_orig, caseflag)
-            plot_gg_tg_comparison(estim.Cls[rtag_tg_is_gg],
-                                  estim.Cls[rtag_tg_isnt_gg],
-                                  estim.noises[rtag_tg_is_gg],
-                                  estim.noises[rtag_tg_isnt_gg],
-                                  maplist.fsky,
-                                  'SMICA x unWISE   [%s x %s]'%('real' if not Tgauss else 'gauss', 'real' if not ggauss else 'gauss'),
-                                  'recon_SMICAxunWISE_'+rtag_tg_is_gg.replace('__Cltaudg~Clgg=True',''),
-                                  lmaxplot=4000)
-                ### Here have a plotting function that plots both recon tag cases for clgg~tg and ~gg
-
 
 #### We want 24 cases: 8 with the hybrid Clgg, 8 with the full Clgg, and 8 with the unmodified (original bias) Clgg. Each set of 8 contains 4 plots of two panels.
 #### 4 plots corresponding to the (True, False) Ttag and gtag combinations, and each panel showing the same combination
@@ -387,6 +322,10 @@ def run_case(caseflag, gwindow_orig):
 #### Currently for the hybrid case we have an issue when real T is used that the theory noise is too high, when Cltaudg~Clgg.
 #### This shouldn't be the case since the hybrid Clgg (if it affected the noise floor) would show this in every combination.
 # Clvv = loginterp.log_interpolate_matrix(c.load(c.get_basic_conf(conf),'Cl_vr_vr_lmax=6144', dir_base = 'Cls/'+c.direc('vr','vr',conf)), c.load(c.get_basic_conf(conf),'L_sample_lmax=6144', dir_base = 'Cls'))[:6144,0,0]
+outdir = 'plots/analysis/paper_analysis_latest/'
+if not os.path.exists(outdir):
+    os.makedirs(outdir)
+
 if not os.path.exists('./maplist.p'):
     pickle.dump(Maps(allmaps=False), open('./maplist.p', 'wb'))
 
@@ -397,6 +336,62 @@ alex_ells = np.array(lines[0].decode('utf-8').split(' ')).astype('float')[:-1]
 alex_clgg = np.array(lines[1].decode('utf-8').split(' ')).astype('float')[:-1]
 alex_lssspec = interp1d(alex_ells,alex_clgg, bounds_error=False,fill_value='extrapolate')(np.arange(6144))
 
+maplist_unmodified = pickle.load(open('./maplist.p', 'rb'))
+maplist = deepcopy(maplist_unmodified)
+delta_to_g = maplist.maps['unWISE'].sum() / maplist.maps['unWISE'].size
+estim = Estimator()
+cosmologies = {}
+
+get_cosmo_tag = lambda case, gwindow_orig : '%sx%s' % (case, gwindow_orig)
 for case in ('orig', 'hybrid'):
     for gwindow_orig in (True, False):
-        run_case(case, gwindow_orig)
+        cosmo_tag = get_cosmo_tag(case, gwindow_orig)
+        cosmologies[cosmo_tag] = Cosmology()
+        csm = cosmologies[cosmo_tag]
+        csm.compute_Cls(ngbar=delta_to_g, gwindow_orig=gwindow_orig)
+        if case == 'hybrid':
+            csm.Clmm_as_gg = csm.Clmm*delta_to_g**2
+            csm.Clgg = np.where(csm.Clmm_as_gg > csm.Clgg, csm.Clmm_as_gg, csm.Clgg)
+            csm.Cltaudg = ((csm.Clgg/delta_to_g**2) - 9.2e-8) * csm.get_limber_window('taud',avg=True,gwindow_orig=gwindow_orig) * delta_to_g / csm.get_limber_window('g',avg=True,gwindow_orig=gwindow_orig)
+            csm.Cltaudtaud = ((csm.Clgg/delta_to_g**2)-9.2e-8)*csm.get_limber_window('taud',avg=True,gwindow_orig=gwindow_orig)**2/csm.get_limber_window('g',avg=True,gwindow_orig=gwindow_orig)**2
+        maplist.Cls['unWISE'] = csm.Clgg.copy()
+        maplist.gaussian_Cls['unWISE'] = csm.Clgg.copy()
+        tg_gg_offset = csm.get_limber_window('taud', avg=True, gwindow_orig=gwindow_orig) / csm.get_limber_window('g', avg=True, gwindow_orig=gwindow_orig) / delta_to_g
+        for Tgauss in (True, False):
+            for ggauss in (True, False):
+                for tg_is_gg in (True, False):
+                    if tg_is_gg:
+                        cltaudg = csm.Clgg * tg_gg_offset
+                        cltaudtaud = csm.Clgg * tg_gg_offset**2
+                    else:
+                        cltaudg = csm.Cltaudg.copy()
+                        cltaudtaud = csm.Cltaudtaud.copy()
+                    recon_tag = estim.get_recon_tag('SMICA', 'unWISE', Tgauss, ggauss, tg_is_gg, gwindow_orig, case)
+                    estim.reconstruct(maplist, 'SMICA', 'unWISE', Tgauss, ggauss, cltaudg, recon_tag)
+                    plt.figure()
+                    plt.loglog(maplist.Cls['unWISE'], label='Map Cls')
+                    plt.loglog(alex_lssspec*delta_to_g**2, label='Alex\'s Clgg')
+                    plt.loglog(csm.Clgg, label='Clgg')
+                    plt.loglog(cltaudg**2/cltaudtaud, label=r'${C_\ell^{\dot{\tau}\mathrm{g}^2}} / C_\ell^{\dot{\tau}\dot{\tau}}$', ls='--')
+                    plt.loglog(csm.Clmm*delta_to_g**2, label='Clmm')
+                    plt.xlabel(r'$\ell$')
+                    plt.ylabel(r'$C_\ell^{\mathrm{Xg}}$')
+                    plt.ylim([plt.ylim()[0], 0.02])
+                    plt.legend()
+                    plt.savefig(outdir + 'galspec_' + recon_tag + '.png')
+                    twopt_bandpowers(estim.Cls[recon_tag],
+                                     estim.noises[recon_tag],
+                                     maplist.fsky,
+                                     'SMICA x unWISE   [%s x %s]'%('real' if not Tgauss else 'gauss', 'real' if not ggauss else 'gauss'),
+                                     'recon_SMICAxunWISE_'+recon_tag,
+                                     lmaxplot=4000)
+                rtag_tg_is_gg = estim.get_recon_tag('SMICA', 'unWISE', Tgauss, ggauss, True, gwindow_orig, case)
+                rtag_tg_isnt_gg = estim.get_recon_tag('SMICA', 'unWISE', Tgauss, ggauss, False, gwindow_orig, case)
+                plot_gg_tg_comparison(estim.Cls[rtag_tg_is_gg],
+                                      estim.Cls[rtag_tg_isnt_gg],
+                                      estim.noises[rtag_tg_is_gg],
+                                      estim.noises[rtag_tg_isnt_gg],
+                                      maplist.fsky,
+                                      'SMICA x unWISE   [%s x %s]'%('real' if not Tgauss else 'gauss', 'real' if not ggauss else 'gauss'),
+                                      'recon_SMICAxunWISE_'+rtag_tg_is_gg.replace('__Cltaudg~Clgg=True',''),
+                                      lmaxplot=4000)
