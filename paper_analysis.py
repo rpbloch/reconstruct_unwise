@@ -22,78 +22,6 @@ from scipy.integrate import simps
 from math import lgamma
 import pickle
 
-class Maps(object):
-    def get_alms(self, tag, gauss=False):
-        if 'unWISE' in tag:
-            beam = np.ones(6144)
-            fsky = 1.
-            mask = np.ones(12*2048**2)
-        else:
-            beam = 1 / self.beams[tag.split('-')[0]]
-            fsky = self.fsky
-            mask = self.mask_map
-        if gauss:
-            # Important order of operations. For Gaussian T maps, the power spectrum of the full sky and cut sky are significantly different.
-            # Therefore to best match the input T map spectrum to the theory T spectrum the following order is required:
-            # 1) Spectrum used must be (Tmap * mask) / fsky   to represent the full sky power of T
-            # 2) Generate Gaussian realization
-            # 3) Remask. The power spectrum matches slightly better if we don't remask, but we are using masked T inputs and the mask doesn't
-            #            survive the Gaussification of the power spectrum. For this reason we also want a separate cache of Gaussian Tmap Cls
-            # 4) Debeam
-            return hp.almxfl(hp.map2alm(hp.synfast(hp.anafast(self.input_maps[tag] * mask) / fsky, 2048) * mask), beam)
-        else:
-            return hp.almxfl(hp.map2alm(self.input_maps[tag] * mask), beam)
-    def alm2map(self, alms, tag):
-        return hp.alm2map(alms[tag], 2048)
-    def get_Cls(self, alms, tag):
-        return hp.alm2cl(alms[tag.split('-')[0]]) / self.fsky  # For CMB subtracted maps we only want to reconstruct the subtracted map, we want the full frequency sky for the theory Cls
-    def __init__(self, allmaps=True, fullsky=False):
-        print('Loading input maps')
-        if fullsky:
-            self.mask_map = np.ones(12*2048**2)
-        else:
-            self.mask_map = np.load('data/mask_unWISE_thres_v10.npy')
-        self.fsky = np.where(self.mask_map!=0)[0].size / self.mask_map.size
-        if allmaps:
-            self.map_tags = ('SMICA', '100GHz', '143GHz', '217GHz', '100GHz-SMICA', '143GHz-SMICA', '217GHz-SMICA', 'unWISE')
-        else:
-            self.map_tags = ('SMICA', 'unWISE')
-        self.input_maps = {'SMICA_input' : hp.reorder(fits.open('data/planck_data_testing/maps/COM_CMB_IQU-smica_2048_R3.00_full.fits')[1].data['I_STOKES_INP'], n2r=True),
-                           '100GHz' : hp.reorder(fits.open('data/planck_data_testing/maps/HFI_SkyMap_100_2048_R3.01_full.fits')[1].data['I_STOKES'], n2r=True) if '100GHz' in self.map_tags else None,
-                           '143GHz' : hp.reorder(fits.open('data/planck_data_testing/maps/HFI_SkyMap_143_2048_R3.01_full.fits')[1].data['I_STOKES'], n2r=True) if '143GHz' in self.map_tags else None,
-                           '217GHz' : hp.reorder(fits.open('data/planck_data_testing/maps/HFI_SkyMap_217_2048_R3.01_full.fits')[1].data['I_STOKES'], n2r=True) if '217GHz' in self.map_tags else None,
-                           '100GHz-SMICA' : fits.open('data/planck_data_testing/maps/HFI_CompMap_Foregrounds-smica-100_R3.00.fits')[1].data['INTENSITY'].flatten() if '100GHz-SMICA' in self.map_tags else None,
-                           '143GHz-SMICA' : fits.open('data/planck_data_testing/maps/HFI_CompMap_Foregrounds-smica-143_R3.00.fits')[1].data['INTENSITY'].flatten() if '143GHz-SMICA' in self.map_tags else None,
-                           '217GHz-SMICA' : fits.open('data/planck_data_testing/maps/HFI_CompMap_Foregrounds-smica-217_R3.00.fits')[1].data['INTENSITY'].flatten() if '217GHz-SMICA' in self.map_tags else None,
-                           'unWISE_input' : fits.open('data/unWISE/numcounts_map1_2048-r1-v2_flag.fits')[1].data['T'].flatten() }
-        for tag in list(self.input_maps.keys()):  # Clean tags of unloaded maps
-            if self.input_maps[tag] is None:
-                del self.input_maps[tag]
-        self.beams = { 'SMICA' : hp.gauss_beam(fwhm=np.radians(5/60), lmax=6143),
-                       '100GHz' : hp.gauss_beam(fwhm=np.radians(9.66/60), lmax=6143),
-                       '143GHz' : hp.gauss_beam(fwhm=np.radians(7.27/60), lmax=6143),
-                       '217GHz' : hp.gauss_beam(fwhm=np.radians(5.01/60), lmax=6143) }
-        self.beams['100GHz'][4001:] = self.beams['100GHz'][4000]  # Numerical trouble for healpix for beams that blow up at large ell. Sufficient to flatten out at high ell above where the 1/TT filter peaks
-        print('Adding Gaussian noise to CMB maps')
-        self.input_maps['SMICA'] = self.input_maps['SMICA_input'] + hp.synfast(np.repeat([hp.anafast(self.input_maps['SMICA_input'], lmax=2500)[-1]], 6144), 2048)
-        print('Inpainting unWISE map in masked regions')
-        self.input_maps['unWISE'] = self.input_maps['unWISE_input'].copy()
-        if not fullsky:
-            ngal_per_pix = self.input_maps['unWISE_input'][np.where(self.mask_map!=0)].sum() / np.where(self.mask_map!=0)[0].size
-            ngal_fill = np.random.poisson(lam=ngal_per_pix, size=np.where(self.mask_map==0)[0].size)
-            self.input_maps['unWISE'][np.where(self.mask_map==0)] = ngal_fill
-        print('Masking and debeaming maps')  # Exclude unWISE from actual map processing
-        self.map_alms = { tag : self.get_alms(tag) for tag in self.map_tags[:-1]}
-        self.maps = { tag : self.alm2map(self.map_alms, tag) for tag in self.map_tags[:-1]}
-        self.Cls = { tag : self.get_Cls(self.map_alms, tag) for tag in self.map_tags[:-1]}
-        self.maps['unWISE'] = self.input_maps['unWISE'].copy()
-        self.Cls['unWISE'] = hp.anafast(self.maps['unWISE'])
-        print('Generating Gaussian realizations of maps')
-        self.gaussian_alms = { tag : self.get_alms(tag, gauss=True) for tag in self.map_tags}
-        self.gaussian_maps = { tag : self.alm2map(self.gaussian_alms, tag) for tag in self.map_tags}
-        self.gaussian_Cls = { tag : self.get_Cls(self.gaussian_alms, tag) for tag in self.map_tags}
-
-
 class Cosmology(object):
     def ne0(self):
         G_SI = 6.674e-11
@@ -292,387 +220,56 @@ def twopt_bandpowers(recon_Cls, theory_noise, FSKY, plottitle, filename, lmaxplo
     plt.legend()
     plt.savefig(outdir + filename)
     plt.close('all')
-  
-def plot_gg_tg_comparison(rc1, rc2, tn1, tn2, FSKY, plottitle, filename, lmaxplot=700, convert_K=True):
-    if not filename.endswith('.png'):
-        filename += '.png'
-    ell = np.arange(2, lmaxplot)
-    n_bands = (len(ell) - 1) // 5
-    ell_bands = np.array([np.mean(ell[i*5:(i+1)*5]) for i in range(n_bands)])
-    Cls_bands = np.zeros((5, n_bands))
-    for i in range(n_bands):
-        Cls_bands[0, i] = np.mean(rc1[i*5:(i+1)*5])
-        Cls_bands[1, i] = np.mean(rc2[i*5:(i+1)*5])
-        Cls_bands[2, i] = np.mean(tn1[i*5:(i+1)*5])
-        Cls_bands[3, i] = np.mean(tn2[i*5:(i+1)*5])
-        #Cls_bands[4, i] = np.mean(Clvv[i*5:(i+1)*5])
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,6))
-    ax1.loglog(ell_bands, Cls_bands[0], label='Reconstruction')
-    ax2.loglog(ell_bands, Cls_bands[1], label='Reconstruction')
-    if convert_K:
-        ax1.loglog(ell_bands, Cls_bands[2] * FSKY / 2.725**2, label='Theory * fsky')
-        ax2.loglog(ell_bands, Cls_bands[3] * FSKY / 2.725**2, label='Theory * fsky')
-    else:
-        ax1.loglog(ell_bands, Cls_bands[2] * FSKY, label='Theory * fsky')
-        ax2.loglog(ell_bands, Cls_bands[3] * FSKY, label='Theory * fsky')
-    # plt.loglog(ell_bands[:2], Cls_bands[4, :2], label='Theory Signal') 
-    fig.suptitle(plottitle)
-    ax1.set_title('tg is gg')
-    ax2.set_title('tg isn\'t gg')
-    ax1.set_xlabel(r'$\ell$')
-    ax2.set_xlabel(r'$\ell$')
-    ax1.set_ylabel(r'$N_\ell^{\mathrm{vv}}\ \left[v^2/c^2\right]$')
-    ax1.legend()
-    ax2.legend()
-    plt.savefig(outdir + filename)
-    plt.close('all')
 
 outdir = 'plots/analysis/paper_analysis_latest/'
 if not os.path.exists(outdir):
     os.makedirs(outdir)
 
-
-#maplist = Maps(allmaps=False, fullsky=False)
-#delta_to_g = maplist.maps['unWISE'].sum() / maplist.maps['unWISE'].size
-#maplist.gaussian_Cls['unWISE'] = hp.anafast(maplist.gaussian_maps['unWISE'])
-#maplist.gaussian_Cls['SMICA']  = hp.anafast(maplist.gaussian_maps['SMICA'])
-estim = Estimator()
-csm = Cosmology()
-csm.compute_Cls(ngbar=2.60)
-###recon_tag = estim.get_recon_tag('SMICA', 'unWISE', True, True, True, False, 'nonhybrid')
-#estim.reconstruct(maplist.gaussian_maps['SMICA'], maplist.gaussian_maps['unWISE'], maplist.gaussian_Cls['SMICA'], maplist.gaussian_Cls['unWISE'], maplist.mask_map, csm.Cltaudg, recon_tag)
-#twopt_bandpowers(estim.Cls[recon_tag], estim.noises[recon_tag], maplist.fsky, 'SMICA x unWISE   [gauss x gauss]', 'recon_SMICAxunWISE_fullsky_'+recon_tag, lmaxplot=1000)
-
-mask_map = np.load('data/mask_unWISE_thres_v10.npy')
-fullsky_mask = np.ones(12*2048**2)
-mask_planck70 = hp.reorder(fits.open('data/masks/planck/HFI_Mask_GalPlane-apo0_2048_R2.00.fits')[1].data['GAL070'],n2r=True)
+Clvv = loginterp.log_interpolate_matrix(c.load(c.get_basic_conf(conf),'Cl_vr_vr_lmax=6144', dir_base = 'Cls/'+c.direc('vr','vr',conf)), c.load(c.get_basic_conf(conf),'L_sample_lmax=6144', dir_base = 'Cls'))[:6144,0,0]
 
 unWISEmap = fits.open('data/unWISE/numcounts_map1_2048-r1-v2_flag.fits')[1].data['T'].flatten()
-#unWISEmap_inpainted = unWISEmap.copy()
-unWISEmap_inpainted_planck = unWISEmap.copy()
-ngal_per_pix = 2.60
-#ngal_fill = np.random.poisson(lam=ngal_per_pix, size=np.where(mask_map==0)[0].size)
-ngal_fill_planck = np.random.poisson(lam=ngal_per_pix, size=np.where(mask_planck70==0)[0].size)
-#unWISEmap_inpainted[np.where(mask_map==0)] = ngal_fill
-unWISEmap_inpainted_planck[np.where(mask_planck70==0)] = ngal_fill_planck
+ngbar = unWISEmap.sum() / unWISEmap.size
+
 gcl_full = hp.anafast(unWISEmap)
-#gcl_inpainted = hp.anafast(unWISEmap_inpainted)
 gmap_full_gauss = hp.synfast(gcl_full, 2048)
 gmap_full_real = unWISEmap.copy()
-#gmap_inpainted_gauss = hp.synfast(gcl_inpainted, 2048)
-#gmap_inpainted_real = unWISEmap_inpainted.copy()
-gmap_inpainted_planck_gauss = hp.synfast(hp.anafast(unWISEmap_inpainted_planck), 2048)
-gmap_inpainted_planck_real = unWISEmap_inpainted_planck.copy()
+
+mask_map = np.load('data/mask_unWISE_thres_v10.npy')
+fsky = np.where(mask_map!=0)[0].size / mask_map.size
 
 SMICAinp = hp.reorder(fits.open('data/planck_data_testing/maps/COM_CMB_IQU-smica_2048_R3.00_full.fits')[1].data['I_STOKES_INP'], n2r=True)
 noisegen = hp.synfast(np.repeat([hp.anafast(SMICAinp, lmax=2500)[-1]], 6144), 2048)
-SMICAmap_gauss = hp.synfast(hp.anafast(SMICAinp + noisegen),2048)
-SMICAmap_real = SMICAinp + noisegen
+SMICAmap_gauss_unmodified = hp.synfast(hp.anafast(SMICAinp + noisegen),2048)
+SMICAmap_real_unmodified = SMICAinp + noisegen
 
 SMICAbeam = hp.gauss_beam(fwhm=np.radians(5/60), lmax=6143)
+SMICAmap_gauss = hp.alm2map(hp.almxfl(hp.map2alm(SMICAmap_gauss_unmodified), 1/SMICAbeam), 2048)
+SMICAmap_real = hp.alm2map(hp.almxfl(hp.map2alm(SMICAmap_real_unmodified), 1/SMICAbeam), 2048)
+ClTT = hp.anafast(SMICAmap_real)
 
-#masks = {'unWISE mask' : mask_map, 'no mask' : fullsky_mask, 'Planck 0.7 galaxy cut' : mask_planck70}
-masks = {}
-skycuts = { key : np.where(masks[key]!=0)[0].size / masks[key].size for key in masks}
+estim = Estimator()
+csm = Cosmology()
+csm.compute_Cls(ngbar=ngbar)
 
-maskdebeam_alms = lambda mask : hp.almxfl(hp.map2alm(mask * SMICAmap_real), 1 / SMICAbeam)
-maskdebeam_alms_gauss = lambda mask : hp.almxfl(hp.map2alm(mask * SMICAmap_gauss), 1 / SMICAbeam)
+Tmaps = { True : SMICAmap_gauss, False : SMICAmap_real}
+gmaps = { True : gmap_full_gauss, False : gmap_full_real}
+for Tgauss in (True, False):
+    for ggauss in (True, False):
+        recon_tag = estim.get_recon_tag('SMICA', 'unWISE', Tgauss, ggauss, notes='postmask_unWISE')
+        estim.reconstruct(Tmaps[Tgauss], gmaps[ggauss], ClTT, csm.Clgg, mask_map, csm.Cltaudg, recon_tag)
 
-# Pre masking
-Tlms_real = { key : maskdebeam_alms(masks[key]) for key in masks}
-TCls_real = { key : hp.alm2cl(Tlms_real[key]) / skycuts[key] for key in Tlms_real}
-Tmaps_real = { key : hp.alm2map(Tlms_real[key], 2048) for key in Tlms_real}
-Tlms_gauss = { key : maskdebeam_alms_gauss(masks[key]) for key in masks}
-TCls_gauss = { key : hp.alm2cl(Tlms_gauss[key]) / skycuts[key] for key in Tlms_gauss}
-Tmaps_gauss = { key : hp.alm2map(Tlms_gauss[key], 2048) for key in Tlms_gauss}
-# Post masking
-masks={}
-skycuts={}
-masks['unWISE mask (post-recon)'] = mask_map
-skycuts = { key : np.where(masks[key]!=0)[0].size / masks[key].size for key in masks}
-#skycuts['unWISE mask (post-recon)'] = skycuts['unWISE mask']
-Tlms_real['unWISE mask (post-recon)'] = hp.almxfl(hp.map2alm(SMICAmap_real), 1 / SMICAbeam)
-Tlms_gauss['unWISE mask (post-recon)'] = hp.almxfl(hp.map2alm(SMICAmap_gauss), 1 / SMICAbeam)
-TCls_real['unWISE mask (post-recon)'] = hp.alm2cl(Tlms_real['unWISE mask (post-recon)'])  # No fsky factor because it is full sky in the filter
-TCls_gauss['unWISE mask (post-recon)'] = hp.alm2cl(Tlms_gauss['unWISE mask (post-recon)'])  # No fsky factor because it is full sky in the filter
-Tmaps_real['unWISE mask (post-recon)'] = hp.alm2map(Tlms_real['unWISE mask (post-recon)'], 2048)
-Tmaps_gauss['unWISE mask (post-recon)'] = hp.alm2map(Tlms_gauss['unWISE mask (post-recon)'], 2048)
-
-Clvv = loginterp.log_interpolate_matrix(c.load(c.get_basic_conf(conf),'Cl_vr_vr_lmax=6144', dir_base = 'Cls/'+c.direc('vr','vr',conf)), c.load(c.get_basic_conf(conf),'L_sample_lmax=6144', dir_base = 'Cls'))[:6144,0,0]
-
-#for gcase in ('mapspectrum', 'fullmap', 'inpainted', 'inpainted_planck'):
-for gcase in (['fullmap', 'inpainted_planck']):
-    print('gcase: ' + gcase)
-    gwindows = {'fullmap' : 1.2, 'inpainted' : 0.65}
-    if gcase in ('fullmap', 'inpainted'):
-        csm.compute_Cls(ngbar=2.60, gwindow_zdep=gwindows[gcase])
-        clgg_gcase = csm.Clgg.copy()
-    elif gcase == 'mapspectrum':
-        csm.compute_Cls(ngbar=2.60, gwindow_zdep=gwindows['fullmap'])  # Optional, slightly better taudg scaling for map gg
-        clgg_gcase = gcl_full.copy()
-    elif gcase == 'inpainted_planck':
-        csm.compute_Cls(ngbar=2.60)
-        clgg_gcase = csm.Clgg.copy()
-    for case in masks:
-        print('   reconstruction case: ' + case)
-        for Tgauss in (True, False):
-            if Tgauss:
-                Tmap = Tmaps_gauss[case].copy()
-                Tcl  = TCls_gauss[case].copy()
-            else:
-                Tmap = Tmaps_real[case].copy()
-                Tcl  = TCls_real[case].copy()
-            for ggauss in (True, False):
-                if ggauss:
-                    if gcase == 'inpainted':
-                        gmap = gmap_inpainted_gauss.copy()
-                    elif gcase == 'inpainted_planck':
-                        gmap = gmap_inpainted_planck_gauss.copy()
-                    else:
-                        gmap = gmap_full_gauss.copy()
-                else:
-                    if gcase == 'inpainted':
-                        gmap = gmap_inpainted_real.copy()
-                    elif gcase == 'inpainted_planck':
-                        gmap = gmap_inpainted_planck_real.copy()
-                    else:
-                        gmap = gmap_full_real.copy()
-                recon_tag = estim.get_recon_tag('SMICA', 'unWISE', Tgauss, ggauss, notes=gcase+case)
-                estim.reconstruct(Tmap, gmap, Tcl, clgg_gcase, masks[case], csm.Cltaudg, recon_tag)
-        recon_tags = [estim.get_recon_tag('SMICA', 'unWISE', tg, gg, notes=gcase+case) for tg in (True, False) for gg in (True, False)]
-        gauss_tags = ['T=%s x lss=%s' % (tg,gg) for tg in ('gauss','real') for gg in ('gauss','real')]
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2,2,figsize=(12,12))
-        for i, ax in zip(np.arange(4), (ax1, ax2, ax3, ax4)):
-            ax.loglog(estim.Cls[recon_tags[i]], lw=2)
-            ax.loglog(estim.noises[recon_tags[i]] * skycuts[case] / 2.725**2, lw=2)
-            ax.loglog(Clvv[:10])
-            ax.set_title('SMICA x unWISE  [%s]\nmask = %s' % (gauss_tags[i], case), fontsize=16)
-            if i > 1:
-                ax.set_xlabel(r'$\ell$', fontsize=16)
-            if i % 2 == 0:
-                ax.set_ylabel(r'$N_\ell^{\mathrm{vv}}\ \left[v^2/c^2\right]$', fontsize=16)
-        fig.suptitle('SMICA x unWISE Gaussian vs Real Inputs', fontsize=22)
-        plt.tight_layout()
-        plt.savefig(outdir + 'SMICAxunWISE_real_vs_gauss_case=%s_gcase=%s.png' % (case, gcase))
-    #case_tags = ['no mask', 'Planck 0.7 galaxy cut', 'unWISE mask', 'unWISE mask (post-recon)']
-    case_tags = ['unWISE mask (post-recon)']
-    for tg in (True, False):
-        for gg in (True, False):
-            recon_tags = [estim.get_recon_tag('SMICA', 'unWISE', tg, gg, notes=gcase+casetag) for casetag in case_tags]
-            fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2,2,figsize=(12,12))
-            #for i, ax in zip(np.arange(4), (ax1, ax2, ax3, ax4)):
-            for i, ax in zip(np.arange(1), [(ax4)]):
-                ax.loglog(estim.Cls[recon_tags[i]], lw=2)
-                ax.loglog(estim.noises[recon_tags[i]] * skycuts[case_tags[i]] / 2.725**2, lw=2)
-                ax.loglog(Clvv[:10])
-                ax.set_title('SMICA x unWISE  [T=%s x lss=%s]\nmask = %s' % (tg, gg, case_tags[i]), fontsize=16)
-                if i > 1:
-                    ax.set_xlabel(r'$\ell$', fontsize=16)
-                if i % 2 == 0:
-                    ax.set_ylabel(r'$N_\ell^{\mathrm{vv}}\ \left[v^2/c^2\right]$', fontsize=16)
-            fig.suptitle('SMICA x unWISE Masking Effects', fontsize=22)
-            plt.tight_layout()
-            plt.savefig(outdir + 'SMICAxunWISE_%s_vs_%s_gcase=%s.png' % (tg, gg, gcase))
-
-
-
-
-
-
-
-# if not os.path.exists('./maplist.p'):
-#     print('Generating maps, please wait...')
-#     pickle.dump(Maps(allmaps=False), open('./maplist.p', 'wb'))
-
-# with open('data/unWISE/Bandpowers_Auto_Sample1.dat','rb') as FILE:
-#    lines = FILE.readlines()
-
-# alex_ells = np.array(lines[0].decode('utf-8').split(' ')).astype('float')[:-1]
-# alex_clgg = np.array(lines[1].decode('utf-8').split(' ')).astype('float')[:-1]
-# alex_lssspec = interp1d(alex_ells,alex_clgg, bounds_error=False,fill_value='extrapolate')(np.arange(6144))
-
-# maplist = pickle.load(open('./maplist.p', 'rb'))
-# delta_to_g = maplist.maps['unWISE'].sum() / maplist.maps['unWISE'].size
-# estim = Estimator()
-# cosmologies = {}
-
-# get_cosmo_tag = lambda case, gwindow_orig : '%sx%s' % (case, gwindow_orig)
-# for case in ('nonhybrid', 'hybrid'):
-# #for case in [('nonhybrid')]:
-#     print('Running cases for Clgg = ' + case)
-#     for gwindow_orig in (True, False):
-#         print('  Running cases with original galaxy window: ' + str(gwindow_orig))
-#         cosmo_tag = get_cosmo_tag(case, gwindow_orig)
-#         cosmologies[cosmo_tag] = Cosmology()
-#         csm = cosmologies[cosmo_tag]
-#         csm.compute_Cls(ngbar=delta_to_g, gwindow_orig=gwindow_orig)
-#         if case == 'hybrid':
-#             csm.Clmm_as_gg = csm.Clmm*delta_to_g**2
-#             csm.Clgg = np.where(csm.Clmm_as_gg > csm.Clgg, csm.Clmm_as_gg, csm.Clgg)
-#             csm.Cltaudg = ((csm.Clgg/delta_to_g**2) - 9.2e-8) * csm.get_limber_window('taud',avg=True,gwindow_orig=gwindow_orig) * delta_to_g / csm.get_limber_window('g',avg=True,gwindow_orig=gwindow_orig)
-#             csm.Cltaudtaud = ((csm.Clgg/delta_to_g**2)-9.2e-8)*csm.get_limber_window('taud',avg=True,gwindow_orig=gwindow_orig)**2/csm.get_limber_window('g',avg=True,gwindow_orig=gwindow_orig)**2
-#         maplist.Cls['unWISE'] = csm.Clgg.copy()
-#         maplist.gaussian_Cls['unWISE'] = csm.Clgg.copy()
-#         tg_gg_offset = csm.get_limber_window('taud', avg=True, gwindow_orig=gwindow_orig) / csm.get_limber_window('g', avg=True, gwindow_orig=gwindow_orig) / delta_to_g
-#         for Tgauss in (True, False):
-#         #for Tgauss in [(True)]:
-#             print('    Running cases for Tmap = gauss = ' + str(Tgauss))
-#             if Tgauss:
-#                 Tmap = maplist.gaussian_maps['SMICA']
-#                 Tcl  = maplist.gaussian_Cls['SMICA']
-#             else:
-#                 Tmap = maplist.maps['SMICA']
-#                 Tcl  = maplist.Cls['SMICA']
-#             for ggauss in (True, False):     
-#                 print('      Running cases for lssmap = gauss = ' + str(ggauss))       
-#                 if ggauss:
-#                     lssmap = maplist.gaussian_maps['unWISE']
-#                     gcl    = maplist.gaussian_Cls['unWISE']
-#                 else:
-#                     lssmap = maplist.maps['unWISE']
-#                     gcl    = maplist.Cls['unWISE']
-#                 for tg_is_gg in (True, False):
-#                     if tg_is_gg:
-#                         cltaudg = csm.Clgg * tg_gg_offset
-#                         cltaudtaud = csm.Clgg * tg_gg_offset**2
-#                     else:
-#                         cltaudg = csm.Cltaudg.copy()
-#                         cltaudtaud = csm.Cltaudtaud.copy()
-#                     recon_tag = estim.get_recon_tag('SMICA', 'unWISE', Tgauss, ggauss, tg_is_gg, gwindow_orig, case)
-#                     estim.reconstruct(Tmap, lssmap, Tcl, gcl, maplist.mask_map, cltaudg, recon_tag)
-#                     #plt.figure()
-#                     #plt.loglog(maplist.Cls['unWISE'], label='Map Cls')
-#                     #plt.loglog(alex_lssspec*delta_to_g**2, label='Alex\'s Clgg')
-#                     #plt.loglog(csm.Clgg, label='Clgg')
-#                     #plt.loglog(cltaudg**2/cltaudtaud, label=r'${C_\ell^{\dot{\tau}\mathrm{g}^2}} / C_\ell^{\dot{\tau}\dot{\tau}}$', ls='--')
-#                     #plt.loglog(csm.Clmm*delta_to_g**2, label='Clmm')
-#                     #plt.xlabel(r'$\ell$')
-#                     #plt.ylabel(r'$C_\ell^{\mathrm{Xg}}$')
-#                     #plt.ylim([plt.ylim()[0], 0.02])
-#                     #plt.legend()
-#                     #plt.savefig(outdir + 'galspec_' + recon_tag + '.png')
-#                     #twopt_bandpowers(estim.Cls[recon_tag],
-#                     #                 estim.noises[recon_tag],
-#                     #                 maplist.fsky,
-#                     #                 'SMICA x unWISE   [%s x %s]'%('real' if not Tgauss else 'gauss', 'real' if not ggauss else 'gauss'),
-#                     #                 'recon_SMICAxunWISE_'+recon_tag,
-#                     #                 lmaxplot=4000)
-#                 rtag_tg_is_gg = estim.get_recon_tag('SMICA', 'unWISE', Tgauss, ggauss, True, gwindow_orig, case)
-#                 rtag_tg_isnt_gg = estim.get_recon_tag('SMICA', 'unWISE', Tgauss, ggauss, False, gwindow_orig, case)
-#                 plot_gg_tg_comparison(estim.Cls[rtag_tg_is_gg],
-#                                       estim.Cls[rtag_tg_isnt_gg],
-#                                       estim.noises[rtag_tg_is_gg],
-#                                       estim.noises[rtag_tg_isnt_gg],
-#                                       maplist.fsky,
-#                                       'SMICA x unWISE   [%s x %s]'%('real' if not Tgauss else 'gauss', 'real' if not ggauss else 'gauss'),
-#                                       'recon_SMICAxunWISE_'+rtag_tg_is_gg.replace('__Cltaudg~Clgg=True',''),
-#                                       lmaxplot=4000)
-
-
-# ## ax1 and ax3 are the left column and will show constant zdep
-# ## ax2 and ax4 are the right column and will show constant clgg case
-# N_unit = maplist.fsky / 2.725**2  # Multiply by theory noise to plot consistent units against reconstruction Cls (v^2/c^2)
-# rtag_zorig_nonhybrid = estim.get_recon_tag('SMICA', 'unWISE', True, True, True, True, 'nonhybrid')
-# rtag_zorig_hybrid    = estim.get_recon_tag('SMICA', 'unWISE', True, True, True, True, 'hybrid')
-# rtag_znew_nonhybrid  = estim.get_recon_tag('SMICA', 'unWISE', True, True, True, False, 'nonhybrid')
-# rtag_znew_hybrid     = estim.get_recon_tag('SMICA', 'unWISE', True, True, True, False, 'hybrid')
-
-# fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2,2,figsize=(12,12))
-
-# ax1.set_title('Original galaxy window', fontsize=18)
-# ax1.set_ylabel('Unmodified Clgg', fontsize=18)
-# ax3.set_ylabel('Modified Clgg', fontsize=18)
-# ax1.loglog(estim.Cls[rtag_zorig_nonhybrid])
-# ax1.loglog(estim.noises[rtag_zorig_nonhybrid] * N_unit)
-# ax3.loglog(estim.Cls[rtag_zorig_hybrid])
-# ax3.loglog(estim.noises[rtag_zorig_hybrid] * N_unit)
-
-# ax2.set_title('Modified galaxy window', fontsize=18)
-# ax2.loglog(estim.Cls[rtag_znew_nonhybrid])
-# ax2.loglog(estim.noises[rtag_znew_nonhybrid] * N_unit)
-# ax4.loglog(estim.Cls[rtag_znew_hybrid])
-# ax4.loglog(estim.noises[rtag_znew_hybrid] * N_unit)
-
-# for ax in (ax1, ax2, ax3, ax4):
-#     ax.set_xlabel(r'$\ell$', fontsize=16)
-
-# fig.suptitle(r'SMICA(gauss) x unWISE(gauss)    (where Clgg$\propto$Cltaudg)', fontsize=22)
-# for ax in (ax2, ax3, ax4):
-#     ax.set_ylim(ax1.get_ylim())
-
-# plt.savefig('f')
-
-
-
-
-
-
-
-
-
-
-# rtag_zorig_nonhybrid_greal = estim.get_recon_tag('SMICA', 'unWISE', True, False, True, True, 'nonhybrid')
-# rtag_zorig_hybrid_greal    = estim.get_recon_tag('SMICA', 'unWISE', True, False, True, True, 'hybrid')
-# rtag_znew_nonhybrid_greal  = estim.get_recon_tag('SMICA', 'unWISE', True, False, True, False, 'nonhybrid')
-# rtag_znew_hybrid_greal     = estim.get_recon_tag('SMICA', 'unWISE', True, False, True, False, 'hybrid')
-
-# fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2,2,figsize=(12,12))
-
-# ax1.set_title('Original galaxy window', fontsize=18)
-# ax1.set_ylabel('Unmodified Clgg', fontsize=18)
-# ax3.set_ylabel('Modified Clgg', fontsize=18)
-# ax1.loglog(estim.Cls[rtag_zorig_nonhybrid_greal])
-# ax1.loglog(estim.noises[rtag_zorig_nonhybrid_greal] * N_unit)
-# ax3.loglog(estim.Cls[rtag_zorig_hybrid_greal])
-# ax3.loglog(estim.noises[rtag_zorig_hybrid_greal] * N_unit)
-
-# ax2.set_title('Modified galaxy window', fontsize=18)
-# ax2.loglog(estim.Cls[rtag_znew_nonhybrid_greal])
-# ax2.loglog(estim.noises[rtag_znew_nonhybrid_greal] * N_unit)
-# ax4.loglog(estim.Cls[rtag_znew_hybrid_greal])
-# ax4.loglog(estim.noises[rtag_znew_hybrid_greal] * N_unit)
-
-# for ax in (ax1, ax2, ax3, ax4):
-#     ax.set_xlabel(r'$\ell$', fontsize=16)
-
-# fig.suptitle(r'SMICA(gauss) x unWISE(real)    (where Clgg$\propto$Cltaudg)', fontsize=22)
-# for ax in (ax2, ax3, ax4):
-#     ax.set_ylim(ax1.get_ylim())
-
-# plt.savefig('t')
-
-
-
-
-
-
-
-# rtag_zorig_nonhybrid_greal_tg = estim.get_recon_tag('SMICA', 'unWISE', True, False, False, True, 'nonhybrid')
-# rtag_zorig_hybrid_greal_tg    = estim.get_recon_tag('SMICA', 'unWISE', True, False, False, True, 'hybrid')
-# rtag_znew_nonhybrid_greal_tg  = estim.get_recon_tag('SMICA', 'unWISE', True, False, False, False, 'nonhybrid')
-# rtag_znew_hybrid_greal_tg     = estim.get_recon_tag('SMICA', 'unWISE', True, False, False, False, 'hybrid')
-
-# fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2,2,figsize=(12,12))
-
-# ax1.set_title('Original galaxy window', fontsize=18)
-# ax1.set_ylabel('Unmodified Clgg', fontsize=18)
-# ax3.set_ylabel('Modified Clgg', fontsize=18)
-# ax1.loglog(estim.Cls[rtag_zorig_nonhybrid_greal_tg])
-# ax1.loglog(estim.noises[rtag_zorig_nonhybrid_greal_tg] * N_unit)
-# ax3.loglog(estim.Cls[rtag_zorig_hybrid_greal_tg])
-# ax3.loglog(estim.noises[rtag_zorig_hybrid_greal_tg] * N_unit)
-
-# ax2.set_title('Modified galaxy window', fontsize=18)
-# ax2.loglog(estim.Cls[rtag_znew_nonhybrid_greal_tg])
-# ax2.loglog(estim.noises[rtag_znew_nonhybrid_greal_tg] * N_unit)
-# ax4.loglog(estim.Cls[rtag_znew_hybrid_greal_tg])
-# ax4.loglog(estim.noises[rtag_znew_hybrid_greal_tg] * N_unit)
-
-# for ax in (ax1, ax2, ax3, ax4):
-#     ax.set_xlabel(r'$\ell$', fontsize=16)
-
-# fig.suptitle(r'SMICA(gauss) x unWISE(real)    (where Cltaudg is modelled)', fontsize=22)
-# for ax in (ax2, ax3, ax4):
-#     ax.set_ylim(ax1.get_ylim())
-
-# plt.savefig('tg')
+recon_tags = [estim.get_recon_tag('SMICA', 'unWISE', tg, gg, notes='postmask_unWISE') for tg in (True, False) for gg in (True, False)]
+gauss_tags = ['T=%s x lss=%s' % (tg,gg) for tg in ('gauss','real') for gg in ('gauss','real')]
+fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2,2,figsize=(12,12))
+for i, ax in zip(np.arange(4), (ax1, ax2, ax3, ax4)):
+    ax.loglog(estim.Cls[recon_tags[i]], lw=2)
+    ax.loglog(estim.noises[recon_tags[i]] * fsky / 2.725**2, lw=2)
+    ax.loglog(Clvv[:10])
+    ax.set_title('SMICA x unWISE  [%s]' % (gauss_tags[i]), fontsize=16)
+    if i > 1:
+        ax.set_xlabel(r'$\ell$', fontsize=16)
+    if i % 2 == 0:
+        ax.set_ylabel(r'$N_\ell^{\mathrm{vv}}\ \left[v^2/c^2\right]$', fontsize=16)
+fig.suptitle('SMICA x unWISE Gaussian vs Real Inputs', fontsize=22)
+plt.tight_layout()
+plt.savefig(outdir + 'SMICAxunWISE_real_vs_gauss.png')
