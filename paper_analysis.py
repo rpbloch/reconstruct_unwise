@@ -89,7 +89,7 @@ class Cosmology(object):
             return simps(window, chis)
         else:    # Returns 1/Mpc window so that integral over Pkk will return unitless Cls
             return window
-    def compute_Cls(self, ngbar, gwindow_zdep=1.2):
+    def compute_Cls(self, ngbar, gwindow_zdep=1.2, use_m_to_e=False):
         chis = self.sample_chis(1000)
         Pmm_full = camb.get_matter_power_interpolator(self.cambpars, nonlinear=True,  hubble_units=False, k_hunit=False, kmax=conf.ks_hm[-1], zmax=conf.zs_hm[-1])
         ells = np.unique(np.append(np.geomspace(1,6143,120).astype(int), 6143))
@@ -102,10 +102,17 @@ class Cosmology(object):
         self.Cltaudtaud = np.zeros(ells.size)
         for l, ell in enumerate(ells):
             Pmm_full_chi = np.diagonal(np.flip(Pmm_full.P(self.chi_to_z(chis), (ell+0.5)/chis[::-1], grid=True), axis=1))
+            if use_m_to_e:
+                #m_to_e = np.diagonal(np.flip(self.bias_e2(self.chi_to_z(chis), (ell+0.5)/chis[::-1])**2 / self.fe(self.chi_to_z(chis))**.5, axis=1))
+                m_to_e = np.diagonal(np.flip(self.bias_e2(self.chi_to_z(chis), (ell+0.5)/chis[::-1]), axis=1))
+            else:
+                m_to_e = np.ones(Pmm_full_chi.shape)
+            Pem_full_chi = Pmm_full_chi * m_to_e
+            Pee_full_chi = Pmm_full_chi * m_to_e**2
             self.Clmm[l]       = simps(Pmm_full_chi * matter_window**2                                   / chis**2, chis)
             self.Clgg[l]       = simps(Pmm_full_chi *                  galaxy_window**2                  / chis**2, chis)
-            self.Cltaudg[l]    = simps(Pmm_full_chi *                  galaxy_window    * taud_window    / chis**2, chis)
-            self.Cltaudtaud[l] = simps(Pmm_full_chi *                                     taud_window**2 / chis**2, chis)
+            self.Cltaudg[l]    = simps(Pem_full_chi *                  galaxy_window    * taud_window    / chis**2, chis)
+            self.Cltaudtaud[l] = simps(Pee_full_chi *                                     taud_window**2 / chis**2, chis)
         self.Clmm       =  interp1d(ells, self.Clmm,       bounds_error=False, fill_value='extrapolate')(np.arange(6144))
         self.Clgg       = (interp1d(ells, self.Clgg,       bounds_error=False, fill_value='extrapolate')(np.arange(6144))  + 9.2e-8) * ngbar**2
         self.Cltaudg    = (interp1d(ells, self.Cltaudg,    bounds_error=False, fill_value='extrapolate')(np.arange(6144))          ) * ngbar
@@ -176,25 +183,27 @@ class Estimator(object):
         if convert_K:  # output map has units of K
             outmap /= 2.725
         return Tmap_filtered, lssmap_filtered, outmap
-    def reconstruct(self, Tmap, lssmap, Tcl, gcl, mask, taudgcl, recon_tag, useharmonic=False):
+    def reconstruct(self, Tmap, lssmap, Tcl, gcl, mask, taudgcl, recon_tag, noise_lmax=6144, useharmonic=False, store_filtered_maps=False):
         if useharmonic:
             if recon_tag not in self.noises.keys():
-                ells = np.unique(np.append(np.geomspace(1,6143,15).astype(int), 6143))
+                ells = np.unique(np.append(np.geomspace(1,noise_lmax-1,15).astype(int), noise_lmax-1))
                 noise = np.zeros(ells.size)
                 for l, ell in enumerate(ells):
                     print('    computing noise @ ell = ' + str(ell))
-                    noise[l] = self.Noise_vr_diag(6143, 0, 0, ell, Tcl, gcl, taudgcl)
+                    noise[l] = self.Noise_vr_diag(noise_lmax-1, 0, 0, ell, Tcl, gcl, taudgcl)
                 self.noises[recon_tag] = interp1d(ells, noise, bounds_error=False, fill_value='extrapolate')(np.arange(6144))
             combination_method = self.combine_harmonic
         else:
             if recon_tag not in self.noises.keys():
-                self.noises[recon_tag] = np.repeat(self.Noise_vr_diag(6143, 0, 0, 5, Tcl, gcl, taudgcl), 6144)
+                self.noises[recon_tag] = np.repeat(self.Noise_vr_diag(noise_lmax, 0, 0, 5, Tcl, gcl, taudgcl), 6144)
             combination_method = self.combine
         if recon_tag not in self.reconstructions.keys():
-            self.Tmaps_filtered[recon_tag], self.lssmaps_filtered[recon_tag], self.reconstructions[recon_tag] = combination_method(Tmap, lssmap, mask, Tcl, gcl, taudgcl, self.noises[recon_tag])
+            if store_filtered_maps:
+                self.Tmaps_filtered[recon_tag], self.lssmaps_filtered[recon_tag], self.reconstructions[recon_tag] = combination_method(Tmap, lssmap, mask, Tcl, gcl, taudgcl, self.noises[recon_tag])
+            else:
+                _, _, self.reconstructions[recon_tag] = combination_method(Tmap, lssmap, mask, Tcl, gcl, taudgcl, self.noises[recon_tag])
         if recon_tag not in self.Cls.keys():
             self.Cls[recon_tag] = hp.anafast(self.reconstructions[recon_tag])
-
 
 def twopt_bandpowers(recon_Cls, theory_noise, FSKY, plottitle, filename, lmaxplot=700, convert_K=True):
     if not filename.endswith('.png'):
@@ -221,55 +230,174 @@ def twopt_bandpowers(recon_Cls, theory_noise, FSKY, plottitle, filename, lmaxplo
     plt.savefig(outdir + filename)
     plt.close('all')
 
-outdir = 'plots/analysis/paper_analysis_latest/'
-if not os.path.exists(outdir):
-    os.makedirs(outdir)
+if __name__ == '__main__':
+    outdir = 'plots/analysis/paper_analysis_latest/'
+    if not os.path.exists(outdir):
+        os.makedirs(outdir)
 
-Clvv = loginterp.log_interpolate_matrix(c.load(c.get_basic_conf(conf),'Cl_vr_vr_lmax=6144', dir_base = 'Cls/'+c.direc('vr','vr',conf)), c.load(c.get_basic_conf(conf),'L_sample_lmax=6144', dir_base = 'Cls'))[:6144,0,0]
+    Clvv = loginterp.log_interpolate_matrix(c.load(c.get_basic_conf(conf),'Cl_vr_vr_lmax=6144', dir_base = 'Cls/'+c.direc('vr','vr',conf)), c.load(c.get_basic_conf(conf),'L_sample_lmax=6144', dir_base = 'Cls'))[:6144,0,0]
 
-unWISEmap = fits.open('data/unWISE/numcounts_map1_2048-r1-v2_flag.fits')[1].data['T'].flatten()
-ngbar = unWISEmap.sum() / unWISEmap.size
+    unWISEmap = fits.open('data/unWISE/numcounts_map1_2048-r1-v2_flag.fits')[1].data['T'].flatten()
+    ngbar = unWISEmap.sum() / unWISEmap.size
 
-gcl_full = hp.anafast(unWISEmap)
-gmap_full_gauss = hp.synfast(gcl_full, 2048)
-gmap_full_real = unWISEmap.copy()
+    gcl_full = hp.anafast(unWISEmap)
+    gmap_full_gauss = hp.synfast(gcl_full, 2048)
+    gmap_full_real = unWISEmap.copy()
 
-mask_map = np.load('data/mask_unWISE_thres_v10.npy')
-fsky = np.where(mask_map!=0)[0].size / mask_map.size
+    mask_map = np.load('data/mask_unWISE_thres_v10.npy')
+    fsky = np.where(mask_map!=0)[0].size / mask_map.size
 
-SMICAinp = hp.reorder(fits.open('data/planck_data_testing/maps/COM_CMB_IQU-smica_2048_R3.00_full.fits')[1].data['I_STOKES_INP'], n2r=True)
-noisegen = hp.synfast(np.repeat([hp.anafast(SMICAinp, lmax=2500)[-1]], 6144), 2048)
-SMICAmap_gauss_unmodified = hp.synfast(hp.anafast(SMICAinp + noisegen),2048)
-SMICAmap_real_unmodified = SMICAinp + noisegen
+    SMICAinp = hp.reorder(fits.open('data/planck_data_testing/maps/COM_CMB_IQU-smica_2048_R3.00_full.fits')[1].data['I_STOKES_INP'], n2r=True)
+    SMICAbeam = hp.gauss_beam(fwhm=np.radians(5/60), lmax=6143)
+    SMICAmap_real = hp.alm2map(hp.almxfl(hp.map2alm(SMICAinp), 1/SMICAbeam), 2048)
 
-SMICAbeam = hp.gauss_beam(fwhm=np.radians(5/60), lmax=6143)
-SMICAmap_gauss = hp.alm2map(hp.almxfl(hp.map2alm(SMICAmap_gauss_unmodified), 1/SMICAbeam), 2048)
-SMICAmap_real = hp.alm2map(hp.almxfl(hp.map2alm(SMICAmap_real_unmodified), 1/SMICAbeam), 2048)
-ClTT = hp.anafast(SMICAmap_real)
+    ClTT = hp.anafast(SMICAmap_real)
+    ClTT[2501:] = 0.  # Zero power for Cls above attenuation
+    Tcl_gauss_generator = hp.anafast(SMICAinp)  # Gaussian realizations will be debeamed and have their power zeroed on a realization-by-realization basis
 
-estim = Estimator()
-csm = Cosmology()
-csm.compute_Cls(ngbar=ngbar)
+    estim = Estimator()
+    csm = Cosmology()
+    csm.compute_Cls(ngbar=ngbar, use_m_to_e=True)
 
-Tmaps = { True : SMICAmap_gauss, False : SMICAmap_real}
-gmaps = { True : gmap_full_gauss, False : gmap_full_real}
-for Tgauss in (True, False):
-    for ggauss in (True, False):
-        recon_tag = estim.get_recon_tag('SMICA', 'unWISE', Tgauss, ggauss, notes='postmask_unWISE')
-        estim.reconstruct(Tmaps[Tgauss], gmaps[ggauss], ClTT, csm.Clgg, mask_map, csm.Cltaudg, recon_tag)
+    ###################################################################
+    ###                                                             ###
+    ###   Load 300 Gaussian realizations and compare mean and       ###
+    ###   standard deviation to the unWISE x SMICA reconstruction   ###
+    ###                                                             ###
+    ###################################################################
+    n_realizations = 100
+    recon_data_files_realgauss = [f for f in os.listdir('data/planck_data_testing/gaussian_reals') if 'gaussxreal__Pee__n' in f]
+    recon_data_files_gaussreal = [f for f in os.listdir('data/planck_data_testing/gaussian_reals') if 'realxgauss__Pee__n' in f]
+    recon_Cls_realgauss = np.zeros((n_realizations, 6144))
+    for f, fname in enumerate(recon_data_files_realgauss):
+        recon_Cls_realgauss[f*10:(f+1)*10]    = np.load('data/planck_data_testing/gaussian_reals/%s' % fname)['Cls']
 
-recon_tags = [estim.get_recon_tag('SMICA', 'unWISE', tg, gg, notes='postmask_unWISE') for tg in (True, False) for gg in (True, False)]
-gauss_tags = ['T=%s x lss=%s' % (tg,gg) for tg in ('gauss','real') for gg in ('gauss','real')]
-fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2,2,figsize=(12,12))
-for i, ax in zip(np.arange(4), (ax1, ax2, ax3, ax4)):
-    ax.loglog(estim.Cls[recon_tags[i]], lw=2)
-    ax.loglog(estim.noises[recon_tags[i]] * fsky / 2.725**2, lw=2)
-    ax.loglog(Clvv[:10])
-    ax.set_title('SMICA x unWISE  [%s]' % (gauss_tags[i]), fontsize=16)
-    if i > 1:
-        ax.set_xlabel(r'$\ell$', fontsize=16)
-    if i % 2 == 0:
-        ax.set_ylabel(r'$N_\ell^{\mathrm{vv}}\ \left[v^2/c^2\right]$', fontsize=16)
-fig.suptitle('SMICA x unWISE Gaussian vs Real Inputs', fontsize=22)
-plt.tight_layout()
-plt.savefig(outdir + 'SMICAxunWISE_real_vs_gauss.png')
+    recon_Cls_gaussreal = np.zeros((n_realizations, 6144))
+    for f, fname in enumerate(recon_data_files_gaussreal):
+        recon_Cls_gaussreal[f*10:(f+1)*10]    = np.load('data/planck_data_testing/gaussian_reals/%s' % fname)['Cls']
+
+    recon_Cls_avg_realgauss = np.mean(recon_Cls_realgauss, axis=0)
+    recon_Cls_std_realgauss = np.std( recon_Cls_realgauss, axis=0)
+    recon_Cls_avg_gaussreal = np.mean(recon_Cls_gaussreal, axis=0)
+    recon_Cls_std_gaussreal = np.std( recon_Cls_gaussreal, axis=0)
+
+    recon_tag = estim.get_recon_tag('SMICA', 'unWISE', False, False, notes='real post-mask recon')
+    estim.reconstruct(SMICAmap_real, gmap_full_real, ClTT, csm.Clgg, mask_map, csm.Cltaudg, recon_tag, noise_lmax=2500, store_filtered_maps=False)  # Don't compute contributions from the theory noise above ell=2500 due to ClTT attenuation blowing up T filter
+
+    nells_bands = 5  # One that gives us an integer ell
+    bandpowers_shape = (6144 // nells_bands, nells_bands)
+    bandpowers = lambda spectrum : np.reshape(spectrum[1:6141], bandpowers_shape).mean(axis=1)
+    #bandpowers = lambda spectrum : np.concatenate([[np.reshape(spectrum[:6140], bandpowers_shape)[0,1:].mean()], np.reshape(spectrum[:6140], bandpowers_shape)[1:,:].mean(axis=1)])
+    ells = bandpowers(np.arange(6144))
+    Cvvstop = np.where(ells <= 10)  # Where Clvv goes way down and plot limits get dumb
+
+    plt.figure()
+    plt.semilogy(ells, bandpowers(estim.Cls[recon_tag]), label='Reconstruction', ls='None', marker='^', zorder=10)
+    plt.semilogy(ells, bandpowers(estim.noises[recon_tag]) * fsky / 2.725**2, label='Theory Noise')
+    plt.semilogy(ells[Cvvstop], bandpowers(Clvv)[Cvvstop], label='Theory Signal')
+    l1, = plt.semilogy(ells, bandpowers(recon_Cls_avg_realgauss), ls='--', label=r'mean, 1$\sigma$ gauss=lss')
+    plt.semilogy(ells, bandpowers(recon_Cls_avg_realgauss+recon_Cls_std_realgauss), ls='--', c=l1.get_c())
+    plt.semilogy(ells, bandpowers(recon_Cls_avg_realgauss-recon_Cls_std_realgauss), ls='--', c=l1.get_c())
+    l2, = plt.semilogy(ells, bandpowers(recon_Cls_avg_gaussreal), ls='--', label=r'mean, 1$\sigma$ gauss=T')
+    plt.semilogy(ells, bandpowers(recon_Cls_avg_gaussreal+recon_Cls_std_gaussreal), ls='--', c=l2.get_c())
+    plt.semilogy(ells, bandpowers(recon_Cls_avg_gaussreal-recon_Cls_std_gaussreal), ls='--', c=l2.get_c())
+    plt.xticks(ells, ['%d' % ell for ell in ells])
+    plt.xlim([0, 50])
+    plt.xlabel(r'$\ell$  (bandpowers of n=%d)' % nells_bands)
+    plt.ylabel(r'$N_\ell^{\mathrm{vv}}\ \left[v^2/c^2\right]$')
+    plt.title('SMICA x unWISE Reconstruction\n'+r'n$_{\mathrm{gauss}}$=%d, 1 bin $%.2f\leq z\leq %.2f$,  $P_{ee}\neq P_{mm}$' % (n_realizations, conf.z_min, conf.z_max))
+    plt.legend()
+    #plt.savefig(outdir+'SMICAxunWISE_Tgauss=False_ggauss=True(%d)' % n_realizations)
+    #plt.savefig(outdir+'SMICAxunWISE_Tgauss=True(300)_ggauss=False')
+    plt.savefig(outdir+'SMICAxunWISE_errors_Pee')
+
+
+    ##################################################################
+    ###                                                            ###
+    ###   Generate Gaussian realizations & reconstruct with them   ###
+    ###                                                            ###
+    ##################################################################
+    # n_realizations = 100
+    # n_rounds = 1
+    # noise_lmax = 2500
+    # Tgauss = True
+    # ggauss = False
+    # casetag = '__Pee'
+    # Noise = np.repeat(estim.Noise_vr_diag(noise_lmax, 0, 0, 5, ClTT, csm.Clgg, csm.Cltaudg), 6144)
+    # for r in np.arange(n_rounds):
+    #     if Tgauss:
+    #         T_savefile = 'data/planck_data_testing/gaussian_reals/SMICA_Tmaps_nreals=%d_%dof3.npz' % (n_realizations, r+1)
+    #         if not os.path.exists(T_savefile):
+    #             print('Generating %d Gaussian realizations of T' % n_realizations)
+    #             SMICAmap_gauss_unmodified = np.zeros((n_realizations, SMICAinp.size))
+    #             SMICAmap_gauss            = np.zeros((n_realizations, SMICAinp.size))
+    #             for i in np.arange(n_realizations):
+    #                 if (i+1) % 5 == 0:
+    #                     print('Completed %d of %d' % (i+1, n_realizations))
+    #                 SMICAmap_gauss_unmodified[i] = hp.synfast(Tcl_gauss_generator, 2048)
+    #                 SMICAmap_gauss[i] = hp.alm2map(hp.almxfl(hp.map2alm(SMICAmap_gauss_unmodified[i]), 1/SMICAbeam), 2048)
+    #             np.savez(T_savefile, maps=SMICAmap_gauss)
+    #         else:
+    #             print('Loading %d Gaussian realizations of T' % n_realizations)
+    #             SMICAmap_gauss = np.load(T_savefile)['maps']
+    #     if ggauss:
+    #         lss_savefile = 'data/planck_data_testing/gaussian_reals/unWISE_gmaps_nreals=%d_%dof3.npz' % (n_realizations, r+1)
+    #         if not os.path.exists(lss_savefile):
+    #             print('Generating %d Gaussian realizations of lss' % n_realizations)
+    #             lssmap_gauss = np.zeros((n_realizations, unWISEmap.size))
+    #             for i in np.arange(n_realizations):
+    #                 if (i+1) % 5 == 0:
+    #                     print('Completed %d of %d' % (i+1, n_realizations))
+    #                 lssmap_gauss[i] = hp.synfast(gcl_full, 2048)
+    #             np.savez(lss_savefile, maps=lssmap_gauss)
+    #         else:
+    #             print('Loading %d Gaussian realizations of lss' % n_realizations)
+    #             lssmap_gauss = np.load(lss_savefile)['maps']
+    #     recon_Cls = np.array([])
+    #     recon_cache_names = {}
+    #     for n in np.arange(n_realizations):
+    #         if (n+1) % 5 == 0:
+    #             print('Completed %d of %d' % (n+1, n_realizations))
+    #         Tmap = SMICAmap_gauss[n] if Tgauss else SMICAmap_real.copy()
+    #         gmap = lssmap_gauss[n]   if ggauss else unWISEmap.copy()
+    #         _, _, recon = estim.combine(Tmap, gmap, mask_map, ClTT, csm.Clgg, csm.Cltaudg, Noise)
+    #         recon_Cls     = np.append(recon_Cls, hp.anafast(recon))
+    #         if (n+1) % 10 == 0:
+    #             recon_cache_filename = 'data/planck_data_testing/gaussian_reals/recon_data__%sx%s%s__n=%d_to_n=%d.npz' % ('gauss' if Tgauss else 'real', 'gauss' if ggauss else 'real', casetag, n-9+r*100, n+r*100)
+    #             recon_cache_names[n] = recon_cache_filename
+    #             np.savez(recon_cache_filename, Cls=np.reshape(recon_Cls,(10,6144)))
+    #             recon_Cls = np.array([])
+    # accumulated_Cls = np.zeros((n_realizations*n_rounds, 6144))
+    # for n in np.arange(n_realizations*n_rounds):
+    #     if (n+1) % 10 == 0:
+    #         accumulated_Cls[n-9:n+1] = np.load(recon_cache_names[n])['Cls']
+    # np.savez('data/planck_data_testing/gaussian_reals/recon_Cls__%sx%s%s.npz' % ('gauss' if Tgauss else 'real', 'gauss' if ggauss else 'real', casetag))
+                
+
+    ####################################################################
+    ###                                                              ###
+    ###   Reconstruction of Tgauss x ggauss post-unWISE mask cases   ###
+    ###                                                              ###
+    ####################################################################
+    # Tmaps = { True : SMICAmap_gauss, False : SMICAmap_real}
+    # gmaps = { True : gmap_full_gauss, False : gmap_full_real}
+    # for Tgauss in (True, False):
+    #     for ggauss in (True, False):
+    #         recon_tag = estim.get_recon_tag('SMICA', 'unWISE', Tgauss, ggauss, notes='postmask_unWISE')
+    #         estim.reconstruct(Tmaps[Tgauss], gmaps[ggauss], ClTT, csm.Clgg, mask_map, csm.Cltaudg, recon_tag)
+
+    # recon_tags = [estim.get_recon_tag('SMICA', 'unWISE', tg, gg, notes='postmask_unWISE') for tg in (True, False) for gg in (True, False)]
+    # gauss_tags = ['T=%s x lss=%s' % (tg,gg) for tg in ('gauss','real') for gg in ('gauss','real')]
+    # fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2,2,figsize=(12,12))
+    # for i, ax in zip(np.arange(4), (ax1, ax2, ax3, ax4)):
+    #     ax.loglog(estim.Cls[recon_tags[i]], lw=2)
+    #     ax.loglog(estim.noises[recon_tags[i]] * fsky / 2.725**2, lw=2)
+    #     ax.loglog(Clvv[:10])
+    #     ax.set_title('SMICA x unWISE  [%s]' % (gauss_tags[i]), fontsize=16)
+    #     if i > 1:
+    #         ax.set_xlabel(r'$\ell$', fontsize=16)
+    #     if i % 2 == 0:
+    #         ax.set_ylabel(r'$N_\ell^{\mathrm{vv}}\ \left[v^2/c^2\right]$', fontsize=16)
+    # fig.suptitle('SMICA x unWISE Gaussian vs Real Inputs', fontsize=22)
+    # plt.tight_layout()
+    # plt.savefig(outdir + 'SMICAxunWISE_real_vs_gauss.png')
