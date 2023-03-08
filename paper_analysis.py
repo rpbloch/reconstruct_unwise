@@ -49,6 +49,7 @@ class Cosmology(object):
     def __init__(self):
         self.zmin = conf.z_min
         self.zmax = conf.z_max
+        self.nbin = conf.N_bins
         self.Clmm = None
         self.cambpars = camb.CAMBparams()
         self.cambpars.set_cosmology(H0 = conf.H0, ombh2=conf.ombh2, \
@@ -65,15 +66,10 @@ class Cosmology(object):
         return self.cosmology_data.redshift_at_comoving_radial_distance(chi)
     def z_to_chi(self, z):
         return self.cosmology_data.comoving_radial_distance(z)
-    def sample_chis(self, N):
-        chi_min = self.z_to_chi(self.zmin)
-        chi_max = self.z_to_chi(self.zmax)
-        return np.linspace(chi_min, chi_max, N)
-    def get_limber_window(self, tag, avg=False, gwindow_zdep=1.2):
+    def get_limber_window(self, tag, chis, avg=False, gwindow_zdep=1.2):
         # Return limber window function for observable in units of 1/Mpc
         thompson_SI = 6.6524e-29
         m_per_Mpc = 3.086e22
-        chis = self.sample_chis(1000)
         if tag == 'm':
             window = np.repeat(1 / self.bin_width, chis.size)
         elif tag == 'g':
@@ -89,34 +85,50 @@ class Cosmology(object):
             return simps(window, chis)
         else:    # Returns 1/Mpc window so that integral over Pkk will return unitless Cls
             return window
-    def compute_Cls(self, ngbar, gwindow_zdep=1.2, use_m_to_e=False):
-        chis = self.sample_chis(1000)
-        Pmm_full = camb.get_matter_power_interpolator(self.cambpars, nonlinear=True,  hubble_units=False, k_hunit=False, kmax=conf.ks_hm[-1], zmax=conf.zs_hm[-1])
+    def compute_Cls(self, ngbar, gwindow_zdep=1.2, use_m_to_e=True):
         ells = np.unique(np.append(np.geomspace(1,6143,120).astype(int), 6143))
-        matter_window = self.get_limber_window('m',    avg=False, gwindow_zdep=gwindow_zdep)
-        galaxy_window = self.get_limber_window('g',    avg=False, gwindow_zdep=gwindow_zdep)
-        taud_window   = self.get_limber_window('taud', avg=False, gwindow_zdep=gwindow_zdep)
-        self.Clmm = np.zeros(ells.size)
-        self.Clgg = np.zeros(ells.size)
-        self.Cltaudg = np.zeros(ells.size)
-        self.Cltaudtaud = np.zeros(ells.size)
+        Pmm_full = camb.get_matter_power_interpolator(self.cambpars, nonlinear=True,  hubble_units=False, k_hunit=False, kmax=conf.ks_hm[-1], zmax=conf.zs_hm[-1])
+        self.Clmm = np.zeros((1, 1, 6144))
+        self.Clgg = np.zeros((1, 1, 6144))
+        self.Cltaudg = np.zeros((self.nbin, 1, 6144))
+        self.Cltaudtaud = np.zeros((self.nbin, self.nbin, 6144))
+        chi_bin_boundaries = np.linspace(self.z_to_chi(self.zmin), self.z_to_chi(self.zmax), self.nbin+1)
+        chis_full = np.linspace(chi_bin_boundaries[0], chi_bin_boundaries[-1], 1000)
+        matter_window = self.get_limber_window('m',    chis_full, avg=False, gwindow_zdep=gwindow_zdep)
+        galaxy_window = self.get_limber_window('g',    chis_full, avg=False, gwindow_zdep=gwindow_zdep)
+        Cmm_bin = np.zeros(ells.size)
+        Cgg_bin = np.zeros(ells.size)
+        Ctg_bin = np.zeros((self.nbin, ells.size))
+        Ctt_bin = np.zeros((self.nbin, self.nbin, ells.size))
         for l, ell in enumerate(ells):
-            Pmm_full_chi = np.diagonal(np.flip(Pmm_full.P(self.chi_to_z(chis), (ell+0.5)/chis[::-1], grid=True), axis=1))
-            if use_m_to_e:
-                #m_to_e = np.diagonal(np.flip(self.bias_e2(self.chi_to_z(chis), (ell+0.5)/chis[::-1])**2 / self.fe(self.chi_to_z(chis))**.5, axis=1))
-                m_to_e = np.diagonal(np.flip(self.bias_e2(self.chi_to_z(chis), (ell+0.5)/chis[::-1]), axis=1))
-            else:
-                m_to_e = np.ones(Pmm_full_chi.shape)
-            Pem_full_chi = Pmm_full_chi * m_to_e
-            Pee_full_chi = Pmm_full_chi * m_to_e**2
-            self.Clmm[l]       = simps(Pmm_full_chi * matter_window**2                                   / chis**2, chis)
-            self.Clgg[l]       = simps(Pmm_full_chi *                  galaxy_window**2                  / chis**2, chis)
-            self.Cltaudg[l]    = simps(Pem_full_chi *                  galaxy_window    * taud_window    / chis**2, chis)
-            self.Cltaudtaud[l] = simps(Pee_full_chi *                                     taud_window**2 / chis**2, chis)
-        self.Clmm       =  interp1d(ells, self.Clmm,       bounds_error=False, fill_value='extrapolate')(np.arange(6144))
-        self.Clgg       = (interp1d(ells, self.Clgg,       bounds_error=False, fill_value='extrapolate')(np.arange(6144))  + 9.2e-8) * ngbar**2
-        self.Cltaudg    = (interp1d(ells, self.Cltaudg,    bounds_error=False, fill_value='extrapolate')(np.arange(6144))          ) * ngbar
-        self.Cltaudtaud =  interp1d(ells, self.Cltaudtaud, bounds_error=False, fill_value='extrapolate')(np.arange(6144))
+            Pmm_full_chi = np.diagonal(np.flip(Pmm_full.P(self.chi_to_z(chis_full), (ell+0.5)/chis_full[::-1], grid=True), axis=1))
+            for taubin in np.arange(self.nbin):            
+                chis = np.linspace(chi_bin_boundaries[taubin], chi_bin_boundaries[taubin+1], 300)
+                galaxy_window_binned = self.get_limber_window('g', chis, avg=False, gwindow_zdep=gwindow_zdep)
+                taud1_window  = self.get_limber_window('taud', chis, avg=False, gwindow_zdep=gwindow_zdep)        
+                Pmm_bin1_chi = np.diagonal(np.flip(Pmm_full.P(self.chi_to_z(chis), (ell+0.5)/chis[::-1], grid=True), axis=1))
+                for taubin2 in np.arange(self.nbin):
+                    chis_binned2 = np.linspace(chi_bin_boundaries[taubin2], chi_bin_boundaries[taubin2+1], 300)
+                    taud2_window   = self.get_limber_window('taud', chis_binned2, avg=False, gwindow_zdep=gwindow_zdep)
+                    Pmm_bin2_chi = np.diagonal(np.flip(Pmm_full.P(self.chi_to_z(chis_binned2), (ell+0.5)/chis_binned2[::-1], grid=True), axis=1))
+                    if use_m_to_e:
+                        #m_to_e = np.diagonal(np.flip(self.bias_e2(self.chi_to_z(chis), (ell+0.5)/chis[::-1])**2 / self.fe(self.chi_to_z(chis))**.5, axis=1))
+                        m_to_e = np.diagonal(np.flip(self.bias_e2(self.chi_to_z(chis), (ell+0.5)/chis[::-1]), axis=1))
+                        m_to_e2 = np.diagonal(np.flip(self.bias_e2(self.chi_to_z(chis_binned2), (ell+0.5)/chis_binned2[::-1]), axis=1))
+                    else:
+                        m_to_e = m_to_e2 = np.ones(Pmm_bin1_chi.shape)
+                    Pee_binned_chi = np.sqrt(Pmm_bin1_chi*Pmm_bin2_chi) * m_to_e * m_to_e2
+                    Ctt_bin[taubin, taubin2, l] = simps(Pee_binned_chi * taud1_window * taud2_window / (chis*chis_binned2), np.sqrt(chis*chis_binned2))
+                Pem_bin1_chi = Pmm_bin1_chi * m_to_e
+                Ctg_bin[taubin, l] = simps(Pem_bin1_chi *              galaxy_window_binned * taud1_window   / chis**2, chis)
+            Cmm_bin[l] = simps(Pmm_full_chi * matter_window**2                                   / chis_full**2, chis_full)
+            Cgg_bin[l] = simps(Pmm_full_chi *                  galaxy_window**2                  / chis_full**2, chis_full)
+        self.Clmm[0,0,:] = interp1d(ells, Cmm_bin, bounds_error=False, fill_value='extrapolate')(np.arange(6144))
+        self.Clgg[0,0,:] = (interp1d(ells, Cgg_bin, bounds_error=False, fill_value='extrapolate')(np.arange(6144)) + 9.2e-8) * ngbar**2
+        for b1 in np.arange(self.nbin):
+            self.Cltaudg[b1,0,:] = (interp1d(ells, Ctg_bin[b1,:], bounds_error=False, fill_value='extrapolate')(np.arange(6144))) * ngbar
+            for b2 in np.arange(self.nbin):
+                self.Cltaudtaud[b1,b2,:] = interp1d(ells, Ctt_bin[b1,b2,:], bounds_error=False, fill_value='extrapolate')(np.arange(6144))    
 
 
 class Estimator(object):
@@ -281,8 +293,9 @@ if __name__ == '__main__':
     recon_Cls_avg_gaussreal = np.mean(recon_Cls_gaussreal, axis=0)
     recon_Cls_std_gaussreal = np.std( recon_Cls_gaussreal, axis=0)
 
-    recon_tag = estim.get_recon_tag('SMICA', 'unWISE', False, False, notes='real post-mask recon')
-    estim.reconstruct(SMICAmap_real, gmap_full_real, ClTT, csm.Clgg, mask_map, csm.Cltaudg, recon_tag, noise_lmax=2500, store_filtered_maps=False)  # Don't compute contributions from the theory noise above ell=2500 due to ClTT attenuation blowing up T filter
+    for b in np.arange(conf.N_bins):
+        recon_tag = estim.get_recon_tag('SMICA', 'unWISE', False, False, notes='real post-mask recon') + 'bin_%d' % b
+        estim.reconstruct(SMICAmap_real, gmap_full_real, ClTT, csm.Clgg[0,0,:], mask_map, csm.Cltaudg[b,0,:], recon_tag, noise_lmax=2500, store_filtered_maps=False)  # Don't compute contributions from the theory noise above ell=2500 due to ClTT attenuation blowing up T filter
 
     nells_bands = 5  # One that gives us an integer ell
     bandpowers_shape = (6144 // nells_bands, nells_bands)
