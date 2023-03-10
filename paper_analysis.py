@@ -46,10 +46,10 @@ class Cosmology(object):
         for zid, redshift in enumerate(z):
             bias_squared[zid, :] = bstar2(redshift) / ( 1 + (k/kstar(redshift))**gamma(redshift) ) / self.fe(redshift)**.5
         return bias_squared
-    def __init__(self):
+    def __init__(self, nbin):
         self.zmin = conf.z_min
         self.zmax = conf.z_max
-        self.nbin = conf.N_bins
+        self.nbin = nbin
         self.Clmm = None
         self.cambpars = camb.CAMBparams()
         self.cambpars.set_cosmology(H0 = conf.H0, ombh2=conf.ombh2, \
@@ -61,7 +61,8 @@ class Cosmology(object):
         self.cambpars.max_eta_k = 14000.0*conf.ks_hm[-1]
         self.cambpars.set_matter_power(redshifts=conf.zs_hm.tolist(), kmax=conf.ks_hm[-1], k_per_logint=20)
         self.cosmology_data = camb.get_background(self.cambpars)
-        self.bin_width = (self.cosmology_data.comoving_radial_distance(self.zmax)-self.cosmology_data.comoving_radial_distance(self.zmin))
+        self.bin_width = (self.cosmology_data.comoving_radial_distance(self.zmax)-self.cosmology_data.comoving_radial_distance(self.zmin)) / self.nbin
+        self.chi_bin_boundaries = np.linspace(self.z_to_chi(self.zmin), self.z_to_chi(self.zmax), self.nbin+1)
     def chi_to_z(self, chi):
         return self.cosmology_data.redshift_at_comoving_radial_distance(chi)
     def z_to_chi(self, z):
@@ -92,8 +93,7 @@ class Cosmology(object):
         self.Clgg = np.zeros((1, 1, 6144))
         self.Cltaudg = np.zeros((self.nbin, 1, 6144))
         self.Cltaudtaud = np.zeros((self.nbin, self.nbin, 6144))
-        chi_bin_boundaries = np.linspace(self.z_to_chi(self.zmin), self.z_to_chi(self.zmax), self.nbin+1)
-        chis_full = np.linspace(chi_bin_boundaries[0], chi_bin_boundaries[-1], 1000)
+        chis_full = np.linspace(self.chi_bin_boundaries[0], self.chi_bin_boundaries[-1], 1000)
         matter_window = self.get_limber_window('m',    chis_full, avg=False, gwindow_zdep=gwindow_zdep)
         galaxy_window = self.get_limber_window('g',    chis_full, avg=False, gwindow_zdep=gwindow_zdep)
         Cmm_bin = np.zeros(ells.size)
@@ -103,12 +103,12 @@ class Cosmology(object):
         for l, ell in enumerate(ells):
             Pmm_full_chi = np.diagonal(np.flip(Pmm_full.P(self.chi_to_z(chis_full), (ell+0.5)/chis_full[::-1], grid=True), axis=1))
             for taubin in np.arange(self.nbin):            
-                chis = np.linspace(chi_bin_boundaries[taubin], chi_bin_boundaries[taubin+1], 300)
+                chis = np.linspace(self.chi_bin_boundaries[taubin], self.chi_bin_boundaries[taubin+1], 300)
                 galaxy_window_binned = self.get_limber_window('g', chis, avg=False, gwindow_zdep=gwindow_zdep)
                 taud1_window  = self.get_limber_window('taud', chis, avg=False, gwindow_zdep=gwindow_zdep)        
                 Pmm_bin1_chi = np.diagonal(np.flip(Pmm_full.P(self.chi_to_z(chis), (ell+0.5)/chis[::-1], grid=True), axis=1))
                 for taubin2 in np.arange(self.nbin):
-                    chis_binned2 = np.linspace(chi_bin_boundaries[taubin2], chi_bin_boundaries[taubin2+1], 300)
+                    chis_binned2 = np.linspace(self.chi_bin_boundaries[taubin2], self.chi_bin_boundaries[taubin2+1], 300)
                     taud2_window   = self.get_limber_window('taud', chis_binned2, avg=False, gwindow_zdep=gwindow_zdep)
                     Pmm_bin2_chi = np.diagonal(np.flip(Pmm_full.P(self.chi_to_z(chis_binned2), (ell+0.5)/chis_binned2[::-1], grid=True), axis=1))
                     if use_m_to_e:
@@ -132,12 +132,13 @@ class Cosmology(object):
 
 
 class Estimator(object):
-    def __init__(self):
+    def __init__(self, nbin):
         self.reconstructions = {}
         self.Cls = {}
         self.noises = {}
         self.Tmaps_filtered = {}
         self.lssmaps_filtered = {}
+        self.nbin = nbin
     def get_recon_tag(self, Ttag, gtag, Tgauss, ggauss, notes):
         return Ttag + '_gauss=' + str(Tgauss) + '__' + gtag + '_gauss=' + str(ggauss) + '__notes=' + notes
     def wigner_symbol(self, ell, ell_1,ell_2):
@@ -162,7 +163,33 @@ class Estimator(object):
                 if np.isfinite(term_entry):
                     terms += term_entry
         return (2*ell+1) / terms
-    def combine(self, Tmap, lssmap, mask, ClTT, Clgg, Cltaudg, Noise, convert_K=True):
+    def Noise_vr_matrix(self, lmax, alpha, gamma, ell, cltt, clgg_binned, cltaudg):
+        lss_alpha = lss_gamma = 0
+        ClTT = cltt.copy()
+        Clgg = clgg_binned.copy()
+        ClTT[:100] = 1e15
+        Clgg[:100] = 1e15
+        cltaudg_alpha = cltaudg[alpha,0,:]
+        cltaudg_gamma = cltaudg[gamma,0,:]
+        terms_top = 0
+        terms_bottomleft = 0
+        terms_bottomright = 0
+        for l2 in np.arange(lmax):
+            for l1 in np.arange(np.abs(l2-ell),l2+ell+1):
+                if l1 > lmax-1 or l1 < 2:  # triangle rule
+                    continue
+                interior_sum_prefactor = (2*l1+1) * (2*l2+1) * self.wigner_symbol(ell, l1, l2)**2
+                term_top_entry = interior_sum_prefactor * ( (cltaudg_alpha[l2]*cltaudg_gamma[l2]) / (ClTT[l1]*clgg_binned[l2]) )
+                term_bottomleft_entry = interior_sum_prefactor * ( (cltaudg_alpha[l2]**2) / (ClTT[l1]*clgg_binned[l2]) )
+                term_bottomright_entry = interior_sum_prefactor * ( (cltaudg_gamma[l2]**2) / (ClTT[l1]*clgg_binned[l2]) )
+                if np.isfinite(term_top_entry):
+                    terms_top += term_top_entry
+                if np.isfinite(term_bottomleft_entry):
+                    terms_bottomleft += term_bottomleft_entry
+                if np.isfinite(term_bottomright_entry):
+                    terms_bottomright += term_bottomright_entry
+        return 4*np.pi * (terms_top / (terms_bottomleft*terms_bottomright))
+    def combine(self, Tmap, lssmap, mask, ClTT, Clgg, Cltaudg, Noise, convert_K=False):
         dTlm = hp.map2alm(Tmap)
         dlm  = hp.map2alm(lssmap)
         ClTT_filter = ClTT.copy()
@@ -179,7 +206,7 @@ class Estimator(object):
         if convert_K:  # output map has units of K
             outmap /= 2.725
         return Tmap_filtered * const_noise, lssmap_filtered, outmap
-    def combine_harmonic(self, Tmap, lssmap, mask, ClTT, Clgg, Cltaudg, Noise, convert_K=True):
+    def combine_harmonic(self, Tmap, lssmap, mask, ClTT, Clgg, Cltaudg, Noise, convert_K=False):
         dTlm = hp.map2alm(Tmap)
         dlm  = hp.map2alm(lssmap)
         ClTT_filter = ClTT.copy()
@@ -195,19 +222,19 @@ class Estimator(object):
         if convert_K:  # output map has units of K
             outmap /= 2.725
         return Tmap_filtered, lssmap_filtered, outmap
-    def reconstruct(self, Tmap, lssmap, Tcl, gcl, mask, taudgcl, recon_tag, noise_lmax=6144, useharmonic=False, store_filtered_maps=False):
+    def reconstruct(self, bno, Tmap, lssmap, Tcl, gcl, mask, taudgcl, recon_tag, noise_lmax=6144, useharmonic=False, store_filtered_maps=False):
         if useharmonic:
             if recon_tag not in self.noises.keys():
                 ells = np.unique(np.append(np.geomspace(1,noise_lmax-1,15).astype(int), noise_lmax-1))
                 noise = np.zeros(ells.size)
                 for l, ell in enumerate(ells):
                     print('    computing noise @ ell = ' + str(ell))
-                    noise[l] = self.Noise_vr_diag(noise_lmax-1, 0, 0, ell, Tcl, gcl, taudgcl)
+                    noise[l] = self.Noise_vr_diag(noise_lmax-1, bno, bno, ell, Tcl, gcl, taudgcl)
                 self.noises[recon_tag] = interp1d(ells, noise, bounds_error=False, fill_value='extrapolate')(np.arange(6144))
             combination_method = self.combine_harmonic
         else:
             if recon_tag not in self.noises.keys():
-                self.noises[recon_tag] = np.repeat(self.Noise_vr_diag(noise_lmax, 0, 0, 5, Tcl, gcl, taudgcl), 6144)
+                self.noises[recon_tag] = np.repeat(self.Noise_vr_diag(noise_lmax, bno, bno, 2, Tcl, gcl, taudgcl), 6144)
             combination_method = self.combine
         if recon_tag not in self.reconstructions.keys():
             if store_filtered_maps:
@@ -216,8 +243,63 @@ class Estimator(object):
                 _, _, self.reconstructions[recon_tag] = combination_method(Tmap, lssmap, mask, Tcl, gcl, taudgcl, self.noises[recon_tag])
         if recon_tag not in self.Cls.keys():
             self.Cls[recon_tag] = hp.anafast(self.reconstructions[recon_tag])
+    def R(self, lmax, alpha, gamma, ell, cltt, clgg_binned, cltaudg):
+        ClTT = cltt.copy()
+        Clgg = clgg_binned.copy()
+        ClTT[:100] = 1e15  # Filter out low ell noise
+        Clgg[:100] = 1e15
+        cltaudg_alpha = cltaudg[alpha,0,:]
+        cltaudg_gamma = cltaudg[gamma,0,:]
+        terms_top = 0
+        terms_bottom = 0
+        for l2 in np.arange(lmax):
+            for l1 in np.arange(np.abs(l2-ell),l2+ell+1):
+                if l1 > lmax-1 or l1 <2:   #triangle rule
+                    continue
+                prefactor = ((2*l1+1)*(2*l2+1) / (ClTT[l1]*Clgg[l2])) * self.wigner_symbol(ell,l1,l2)**2
+                terms_top_add = prefactor * cltaudg_alpha[l2] * cltaudg_gamma[l2]
+                terms_bottom_add = prefactor * cltaudg_alpha[l2]**2
+                if np.isfinite(terms_top_add):
+                    terms_top += terms_top_add
+                if np.isfinite(terms_bottom_add):
+                    terms_bottom += terms_bottom_add
+        return terms_top / terms_bottom
+    def R_matrix(self, lmax, ell, cltt, clgg, cltaudg):
+        R_at_ell = np.zeros((self.nbin,self.nbin))
+        for i in np.arange(self.nbin):
+            for j in np.arange(self.nbin):
+                R_at_ell[i,j] = self.R(lmax, i, j, ell, cltt, clgg[0,0,:], cltaudg)
+        return R_at_ell
+    def PCA(self, lmax, ells, R, cltt, clgg, cltaudg, clvv):
+        SN = np.zeros((len(ells),self.nbin))
+        R_P = np.zeros((len(ells),self.nbin,self.nbin))
+        Cn0 = np.zeros((self.nbin, self.nbin))
+        for alpha in np.arange(self.nbin):
+            for gamma in np.arange(self.nbin):
+                Cn0[alpha,gamma] = self.Noise_vr_matrix(lmax, alpha, gamma, 2, cltt, clgg[0,0,:], cltaudg)
+        for lid, ell in enumerate(ells):    
+            Cn = 0
+            Cn += Cn0
+            C = clvv[ell]
+            Cs = np.dot(np.dot(R,C),np.transpose(R))
+            #First diagonalization    
+            w1,v1 = np.linalg.eigh(Cn)
+            R1 = np.transpose(v1)
+            R2 = np.zeros_like(Cn)
+            for i in np.arange(self.nbin):
+                R2[i,i] = 1.0/np.sqrt(w1[i])
+            #second diagonalization
+            R21 = np.dot(R2,R1)
+            Cs_p = np.dot(np.dot(R21,Cs), np.transpose(R21))
+            w3,v3 = np.linalg.eigh(Cs_p)
+            R3 = np.transpose(v3)        
+            Cs_pp = np.dot(np.dot(R3,Cs_p), np.transpose(R3))
+            for j in np.arange(self.nbin):
+                SN[lid,j] = Cs_pp[j,j]
+            R_P[lid] = np.dot(R3,R21)
+        return SN , R_P
 
-def twopt_bandpowers(recon_Cls, theory_noise, FSKY, plottitle, filename, lmaxplot=700, convert_K=True):
+def twopt_bandpowers(recon_Cls, theory_noise, FSKY, plottitle, filename, lmaxplot=700, convert_K=False):
     if not filename.endswith('.png'):
         filename += '.png'
     ell = np.arange(2, lmaxplot)
@@ -247,7 +329,7 @@ if __name__ == '__main__':
     if not os.path.exists(outdir):
         os.makedirs(outdir)
 
-    Clvv = loginterp.log_interpolate_matrix(c.load(c.get_basic_conf(conf),'Cl_vr_vr_lmax=6144', dir_base = 'Cls/'+c.direc('vr','vr',conf)), c.load(c.get_basic_conf(conf),'L_sample_lmax=6144', dir_base = 'Cls'))[:6144,0,0]
+    Clvv = loginterp.log_interpolate_matrix(c.load(c.get_basic_conf(conf),'Cl_vr_vr_lmax=6144', dir_base = 'Cls/'+c.direc('vr','vr',conf)), c.load(c.get_basic_conf(conf),'L_sample_lmax=6144', dir_base = 'Cls'))[:6144]
 
     unWISEmap = fits.open('data/unWISE/numcounts_map1_2048-r1-v2_flag.fits')[1].data['T'].flatten()
     ngbar = unWISEmap.sum() / unWISEmap.size
@@ -259,17 +341,85 @@ if __name__ == '__main__':
     mask_map = np.load('data/mask_unWISE_thres_v10.npy')
     fsky = np.where(mask_map!=0)[0].size / mask_map.size
 
-    SMICAinp = hp.reorder(fits.open('data/planck_data_testing/maps/COM_CMB_IQU-smica_2048_R3.00_full.fits')[1].data['I_STOKES_INP'], n2r=True)
+    SMICAinp = hp.reorder(fits.open('data/planck_data_testing/maps/COM_CMB_IQU-smica_2048_R3.00_full.fits')[1].data['I_STOKES_INP'], n2r=True) / 2.725
     SMICAbeam = hp.gauss_beam(fwhm=np.radians(5/60), lmax=6143)
     SMICAmap_real = hp.alm2map(hp.almxfl(hp.map2alm(SMICAinp), 1/SMICAbeam), 2048)
 
+    noise_lmax = 2500
     ClTT = hp.anafast(SMICAmap_real)
-    ClTT[2501:] = 0.  # Zero power for Cls above attenuation
+    ClTT[noise_lmax+1:] = 0.  # Zero power for Cls above attenuation
     Tcl_gauss_generator = hp.anafast(SMICAinp)  # Gaussian realizations will be debeamed and have their power zeroed on a realization-by-realization basis
 
-    estim = Estimator()
-    csm = Cosmology()
-    csm.compute_Cls(ngbar=ngbar, use_m_to_e=True)
+    estims = {}
+    csms = {}
+    cvvs = {}
+    theory_signal = {}
+    Rs = {}
+    SNs = {}
+    R_Ps = {}
+    weights = {}
+    confstore = conf.N_bins
+    nells_bands = 5  # One that gives us an integer ell
+    bandpowers_shape = (6144 // nells_bands, nells_bands)
+    bandpowers = lambda spectrum : np.reshape(spectrum[1:6141], bandpowers_shape).mean(axis=1)
+    #bandpowers = lambda spectrum : np.concatenate([[np.reshape(spectrum[:6140], bandpowers_shape)[0,1:].mean()], np.reshape(spectrum[:6140], bandpowers_shape)[1:,:].mean(axis=1)])
+    ells = bandpowers(np.arange(6144))
+    ells_PCA = [1,2,3,4,5,6,7,8,10]
+    Cvvstop = np.where(ells <= 10)  # Where Clvv goes way down and plot limits get dumb
+    binnings = [1,2,4,8,16,32]
+    for nbin in binnings:
+        conf.N_bins = nbin
+        cvvs[nbin] = loginterp.log_interpolate_matrix(c.load(c.get_basic_conf(conf),'Cl_vr_vr_lmax=6144', dir_base = 'Cls/'+c.direc('vr','vr',conf)), c.load(c.get_basic_conf(conf),'L_sample_lmax=6144', dir_base = 'Cls'))[:6144]
+        conf.N_bins = confstore
+        print('Setting up estimator and cosmology for nbin=%d'%nbin)
+        if nbin not in estims.keys():
+            estims[nbin] = Estimator(nbin=nbin)
+        if nbin not in csms.keys():
+            csms[nbin] = Cosmology(nbin=nbin)
+            csms[nbin].compute_Cls(ngbar=ngbar)
+        print('Performing PCA')
+        if nbin not in Rs.keys():
+            Rs[nbin] = estims[nbin].R_matrix(noise_lmax, 2, ClTT, csms[nbin].Clgg, csms[nbin].Cltaudg)
+        if nbin not in SNs.keys():
+            SNs[nbin], R_Ps[nbin] = estims[nbin].PCA(noise_lmax, ells_PCA, Rs[nbin], ClTT, csms[nbin].Clgg, csms[nbin].Cltaudg, cvvs[nbin])
+        weights[nbin] = ( np.abs(R_Ps[nbin][0,-1,:]) / np.linalg.norm(R_Ps[nbin][0,-1,:]) )**2  # indexed as: first ell (best SNR), first principal component (best weights), all bins. Squared so that sum(w) = 1
+        theory = np.zeros((nbin, 6144))
+        for b in np.arange(nbin):
+            for ell in np.arange(6144):
+                theory[b,ell] = np.dot(np.dot(Rs[nbin], cvvs[nbin][ell,:,:]), Rs[nbin].T)[b,b]
+        theory_signal[nbin] = np.sum(theory * weights[nbin][:,np.newaxis], axis=0)
+        vrecon = np.zeros((nbin, 12*2048**2))
+        noises = np.zeros((nbin, 6144))
+        for b in np.arange(nbin):
+            print('bin %d/%d' % (b+1,nbin))
+            recon_tag = estims[nbin].get_recon_tag('SMICA', 'unWISE', False, False, '') + 'bin_%d' % b
+            estims[nbin].reconstruct(b, SMICAmap_real, gmap_full_real, ClTT, csms[nbin].Clgg[0,0,:], mask_map, csms[nbin].Cltaudg[b,0,:], recon_tag, noise_lmax=noise_lmax, store_filtered_maps=False)
+            vrecon[b,:] = estims[nbin].reconstructions[recon_tag]
+            noises[b,:] = estims[nbin].noises[recon_tag]
+        recon_tag = estims[nbin].get_recon_tag('SMICA', 'unWISE', False, False, '')
+        real_out_map = np.sum(vrecon * weights[nbin][:,np.newaxis], axis=0)
+        noise_comb   = np.sum(noises * weights[nbin][:,np.newaxis], axis=0)
+        estims[nbin].reconstructions[recon_tag] = real_out_map.copy()
+        estims[nbin].noises[recon_tag] = noise_comb.copy()
+        estims[nbin].Cls[recon_tag] = hp.anafast(real_out_map)
+
+    fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3,figsize=(15,10))
+    recon_tag = estims[nbin].get_recon_tag('SMICA', 'unWISE', False, False, '')  # same for each case
+    for nbin, ax in zip(binnings,(ax1,ax2,ax3,ax4,ax5,ax6)):
+        l1, = ax.semilogy(ells, bandpowers(estims[nbin].Cls[recon_tag]), label='Reconstruction', ls='None', marker='^', zorder=10)
+        ax.semilogy(np.arange(1,6144), estims[nbin].Cls[recon_tag][1:], c=l1.get_c(), ls='--', alpha=0.5)
+        ax.semilogy(np.arange(1,6144), estims[nbin].noises[recon_tag][1:] * fsky, c=l1.get_c())
+        l2, = ax.semilogy(ells[Cvvstop], bandpowers(theory_signal[nbin])[Cvvstop] * fsky, label='Theory Signal', ls='None', marker='^', zorder=9)
+        ax.semilogy(np.arange(1,10), theory_signal[nbin][1:10] * fsky, c=l2.get_c(), ls='--', alpha=0.5)
+        _ = ax.set_xticks(ells, ['%d' % ell for ell in ells])
+        ax.set_xlim([0, 50])
+        ax.set_xlabel(r'$\ell$')
+        ax.set_ylabel(r'$N_\ell^{\mathrm{vv}}\ \left[v^2/c^2\right]$')
+        ax.legend()
+        ax.set_title('%d bins, SNR = %.2f  by eye %.2f' % (nbin, SNs[nbin][:5,-1].mean(), bandpowers(theory_signal[nbin])[0] / bandpowers(estims[nbin].noises[recon_tag])[0]))
+
+    fig.suptitle('SMICA x unWISE Reconstruction\n'+r'$%.2f\leq z\leq %.2f$,  $P_{ee}\neq P_{mm}$' % (conf.z_min, conf.z_max))
+    plt.savefig(outdir+'different_binning_cases.png')
 
     ###################################################################
     ###                                                             ###
@@ -277,52 +427,70 @@ if __name__ == '__main__':
     ###   standard deviation to the unWISE x SMICA reconstruction   ###
     ###                                                             ###
     ###################################################################
-    n_realizations = 100
-    recon_data_files_realgauss = [f for f in os.listdir('data/planck_data_testing/gaussian_reals') if 'gaussxreal__Pee__n' in f]
-    recon_data_files_gaussreal = [f for f in os.listdir('data/planck_data_testing/gaussian_reals') if 'realxgauss__Pee__n' in f]
-    recon_Cls_realgauss = np.zeros((n_realizations, 6144))
-    for f, fname in enumerate(recon_data_files_realgauss):
-        recon_Cls_realgauss[f*10:(f+1)*10]    = np.load('data/planck_data_testing/gaussian_reals/%s' % fname)['Cls']
+    #n_realizations = 100
+    
+    #recon_data_files_realgauss = [f for f in os.listdir('data/planck_data_testing/gaussian_reals') if 'gaussxreal__Pee__n' in f]
+    #recon_data_files_gaussreal = [f for f in os.listdir('data/planck_data_testing/gaussian_reals') if 'realxgauss__Pee__n' in f]
+    #recon_Cls_realgauss = np.zeros((n_realizations, 6144))
+    #for f, fname in enumerate(recon_data_files_realgauss):
+    #    recon_Cls_realgauss[f*10:(f+1)*10]    = np.load('data/planck_data_testing/gaussian_reals/%s' % fname)['Cls']
 
-    recon_Cls_gaussreal = np.zeros((n_realizations, 6144))
-    for f, fname in enumerate(recon_data_files_gaussreal):
-        recon_Cls_gaussreal[f*10:(f+1)*10]    = np.load('data/planck_data_testing/gaussian_reals/%s' % fname)['Cls']
+    #recon_Cls_gaussreal = np.zeros((n_realizations, 6144))
+    #for f, fname in enumerate(recon_data_files_gaussreal):
+    #    recon_Cls_gaussreal[f*10:(f+1)*10]    = np.load('data/planck_data_testing/gaussian_reals/%s' % fname)['Cls']
 
-    recon_Cls_avg_realgauss = np.mean(recon_Cls_realgauss, axis=0)
-    recon_Cls_std_realgauss = np.std( recon_Cls_realgauss, axis=0)
-    recon_Cls_avg_gaussreal = np.mean(recon_Cls_gaussreal, axis=0)
-    recon_Cls_std_gaussreal = np.std( recon_Cls_gaussreal, axis=0)
+    #recon_Cls_avg_realgauss = np.mean(recon_Cls_realgauss, axis=0)
+    #recon_Cls_std_realgauss = np.std( recon_Cls_realgauss, axis=0)
+    #recon_Cls_avg_gaussreal = np.mean(recon_Cls_gaussreal, axis=0)
+    #recon_Cls_std_gaussreal = np.std( recon_Cls_gaussreal, axis=0)
 
-    for b in np.arange(conf.N_bins):
-        recon_tag = estim.get_recon_tag('SMICA', 'unWISE', False, False, notes='real post-mask recon') + 'bin_%d' % b
-        estim.reconstruct(SMICAmap_real, gmap_full_real, ClTT, csm.Clgg[0,0,:], mask_map, csm.Cltaudg[b,0,:], recon_tag, noise_lmax=2500, store_filtered_maps=False)  # Don't compute contributions from the theory noise above ell=2500 due to ClTT attenuation blowing up T filter
+    #for b in np.arange(conf.N_bins):
+    #    recon_tag = estim.get_recon_tag('SMICA', 'unWISE', False, False, notes='real post-mask recon') + 'bin_%d' % b
+    #    estim.reconstruct(b, SMICAmap_real, gmap_full_real, ClTT, csm.Clgg[0,0,:], mask_map, csm.Cltaudg[b,0,:], recon_tag, noise_lmax=noise_lmax, store_filtered_maps=False)  # Don't compute contributions from the theory noise above ell=2500 due to ClTT attenuation blowing up T filter
 
-    nells_bands = 5  # One that gives us an integer ell
-    bandpowers_shape = (6144 // nells_bands, nells_bands)
-    bandpowers = lambda spectrum : np.reshape(spectrum[1:6141], bandpowers_shape).mean(axis=1)
-    #bandpowers = lambda spectrum : np.concatenate([[np.reshape(spectrum[:6140], bandpowers_shape)[0,1:].mean()], np.reshape(spectrum[:6140], bandpowers_shape)[1:,:].mean(axis=1)])
-    ells = bandpowers(np.arange(6144))
-    Cvvstop = np.where(ells <= 10)  # Where Clvv goes way down and plot limits get dumb
+    #R = estim.R_matrix(noise_lmax, 2, ClTT, csm.Clgg, csm.Cltaudg)
+    #ells = [1,2,3,4,5,6,7,8,10]
+    #SN, R_P = estim.PCA(noise_lmax, ells, R, ClTT, csm.Clgg, csm.Cltaudg, Clvv)
+    #weights = np.abs(R_P[0,-1,:]) / np.linalg.norm(R_P[0,-1,:])  # indexed as: first ell (best SNR), first principal component (best weights), all bins
+    #vrecon = np.zeros((conf.N_bins, 12*2048**2))
+    #noises = np.zeros((conf.N_bins, 6144))
+    #theory = np.zeros((conf.N_bins, 6144))
+    #for b in np.arange(conf.N_bins):
+    #    vrecon[b,:] = estim.reconstructions[estim.get_recon_tag('SMICA', 'unWISE', False, False, notes='real post-mask recon') + 'bin_%d' % b]
+    #    noises[b,:] = estim.noises[estim.get_recon_tag('SMICA', 'unWISE', False, False, notes='real post-mask recon') + 'bin_%d' % b]
+    #    theory[b,:] = Clvv[:,b,b]
 
-    plt.figure()
-    plt.semilogy(ells, bandpowers(estim.Cls[recon_tag]), label='Reconstruction', ls='None', marker='^', zorder=10)
-    plt.semilogy(ells, bandpowers(estim.noises[recon_tag]) * fsky / 2.725**2, label='Theory Noise')
-    plt.semilogy(ells[Cvvstop], bandpowers(Clvv)[Cvvstop], label='Theory Signal')
-    l1, = plt.semilogy(ells, bandpowers(recon_Cls_avg_realgauss), ls='--', label=r'mean, 1$\sigma$ gauss=lss')
-    plt.semilogy(ells, bandpowers(recon_Cls_avg_realgauss+recon_Cls_std_realgauss), ls='--', c=l1.get_c())
-    plt.semilogy(ells, bandpowers(recon_Cls_avg_realgauss-recon_Cls_std_realgauss), ls='--', c=l1.get_c())
-    l2, = plt.semilogy(ells, bandpowers(recon_Cls_avg_gaussreal), ls='--', label=r'mean, 1$\sigma$ gauss=T')
-    plt.semilogy(ells, bandpowers(recon_Cls_avg_gaussreal+recon_Cls_std_gaussreal), ls='--', c=l2.get_c())
-    plt.semilogy(ells, bandpowers(recon_Cls_avg_gaussreal-recon_Cls_std_gaussreal), ls='--', c=l2.get_c())
-    plt.xticks(ells, ['%d' % ell for ell in ells])
-    plt.xlim([0, 50])
-    plt.xlabel(r'$\ell$  (bandpowers of n=%d)' % nells_bands)
-    plt.ylabel(r'$N_\ell^{\mathrm{vv}}\ \left[v^2/c^2\right]$')
-    plt.title('SMICA x unWISE Reconstruction\n'+r'n$_{\mathrm{gauss}}$=%d, 1 bin $%.2f\leq z\leq %.2f$,  $P_{ee}\neq P_{mm}$' % (n_realizations, conf.z_min, conf.z_max))
-    plt.legend()
-    #plt.savefig(outdir+'SMICAxunWISE_Tgauss=False_ggauss=True(%d)' % n_realizations)
-    #plt.savefig(outdir+'SMICAxunWISE_Tgauss=True(300)_ggauss=False')
-    plt.savefig(outdir+'SMICAxunWISE_errors_Pee')
+    #real_out_map = np.sum(vrecon * weights[:,np.newaxis], axis=0)
+    #noise_comb   = np.sum(noises * weights[:,np.newaxis], axis=0)
+    #theory_comb  = np.sum(theory * weights[:,np.newaxis], axis=0)
+
+    #recon_tag = estim.get_recon_tag('SMICA', 'unWISE', False, False, notes='real post-mask recon')
+    #estim.reconstructions[recon_tag] = real_out_map
+    #estim.noises[recon_tag] = noise_comb
+    #estim.Cls[recon_tag] = hp.anafast(real_out_map)
+
+    #hp.mollview(real_out_map,title=r'reconstruction')
+    #plt.savefig(outdir+'qe_reconstructed')
+
+
+    #plt.figure()
+    #plt.semilogy(ells, bandpowers(estim.Cls[recon_tag]), label='Reconstruction', ls='None', marker='^', zorder=10)
+    #plt.semilogy(ells, bandpowers(estim.noises[recon_tag]) * fsky, label='Theory Noise')
+    #plt.semilogy(ells[Cvvstop], bandpowers(theory_comb)[Cvvstop], label='Theory Signal')
+    #l1, = plt.semilogy(ells, bandpowers(recon_Cls_avg_realgauss), ls='--', label=r'mean, 1$\sigma$ gauss=lss')
+    #plt.semilogy(ells, bandpowers(recon_Cls_avg_realgauss+recon_Cls_std_realgauss), ls='--', c=l1.get_c())
+    #plt.semilogy(ells, bandpowers(recon_Cls_avg_realgauss-recon_Cls_std_realgauss), ls='--', c=l1.get_c())
+    #l2, = plt.semilogy(ells, bandpowers(recon_Cls_avg_gaussreal), ls='--', label=r'mean, 1$\sigma$ gauss=T')
+    #plt.semilogy(ells, bandpowers(recon_Cls_avg_gaussreal+recon_Cls_std_gaussreal), ls='--', c=l2.get_c())
+    #plt.semilogy(ells, bandpowers(recon_Cls_avg_gaussreal-recon_Cls_std_gaussreal), ls='--', c=l2.get_c())
+    #plt.xticks(ells, ['%d' % ell for ell in ells])
+    #plt.xlim([0, 50])
+    #plt.xlabel(r'$\ell$  (bandpowers of n=%d)' % nells_bands)
+    #plt.ylabel(r'$N_\ell^{\mathrm{vv}}\ \left[v^2/c^2\right]$')
+    #plt.title('SMICA x unWISE Reconstruction\n'+r'n$_{\mathrm{gauss}}$=%d, %d bin $%.2f\leq z\leq %.2f$,  $P_{ee}\neq P_{mm}$' % (n_realizations, conf.N_bins, conf.z_min, conf.z_max))
+    #plt.title('SMICA x unWISE Reconstruction\n'+r'%d bin $%.2f\leq z\leq %.2f$,  $P_{ee}\neq P_{mm}$' % (conf.N_bins, conf.z_min, conf.z_max))
+    #plt.legend()
+    #plt.savefig(outdir+'comb_%dbin.png'%conf.N_bins)
 
 
     ##################################################################
@@ -404,7 +572,7 @@ if __name__ == '__main__':
     # fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2,2,figsize=(12,12))
     # for i, ax in zip(np.arange(4), (ax1, ax2, ax3, ax4)):
     #     ax.loglog(estim.Cls[recon_tags[i]], lw=2)
-    #     ax.loglog(estim.noises[recon_tags[i]] * fsky / 2.725**2, lw=2)
+    #     ax.loglog(estim.noises[recon_tags[i]] * fsky, lw=2)
     #     ax.loglog(Clvv[:10])
     #     ax.set_title('SMICA x unWISE  [%s]' % (gauss_tags[i]), fontsize=16)
     #     if i > 1:
