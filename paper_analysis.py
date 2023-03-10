@@ -374,15 +374,32 @@ if __name__ == '__main__':
         print('Setting up estimator and cosmology for nbin=%d'%nbin)
         if nbin not in estims.keys():
             estims[nbin] = Estimator(nbin=nbin)
+            if os.path.exists('estim_bins=%d.npz'%nbin):
+                data = np.load('estim_bins=%d.npz'%nbin,allow_pickle=True)['estim'][()]
+                for key in data:
+                    estims[nbin].__dict__[key] = data[key]
         if nbin not in csms.keys():
             csms[nbin] = Cosmology(nbin=nbin)
-            csms[nbin].compute_Cls(ngbar=ngbar)
+            if os.path.exists('csm_bins=%d.npz'%nbin):
+                data = np.load('csm_bins=%d.npz'%nbin, allow_pickle=True)['csms'][()]
+                for key in data:
+                    csms[nbin].__dict__[key] = data[key]
+            else:
+                csms[nbin].compute_Cls(ngbar=ngbar)
         print('Performing PCA')
         if nbin not in Rs.keys():
-            Rs[nbin] = estims[nbin].R_matrix(noise_lmax, 2, ClTT, csms[nbin].Clgg, csms[nbin].Cltaudg)
+            if os.path.exists('PCA_bins=%d.npz'%nbin):
+                Rs[nbin] = np.load('PCA_bins=%d.npz'%nbin)['R']
+            else:
+                Rs[nbin] = estims[nbin].R_matrix(noise_lmax, 2, ClTT, csms[nbin].Clgg, csms[nbin].Cltaudg)
         if nbin not in SNs.keys():
-            SNs[nbin], R_Ps[nbin] = estims[nbin].PCA(noise_lmax, ells_PCA, Rs[nbin], ClTT, csms[nbin].Clgg, csms[nbin].Cltaudg, cvvs[nbin])
-        weights[nbin] = ( np.abs(R_Ps[nbin][0,-1,:]) / np.linalg.norm(R_Ps[nbin][0,-1,:]) )**2  # indexed as: first ell (best SNR), first principal component (best weights), all bins. Squared so that sum(w) = 1
+            if os.path.exists('PCA_bins=%d.npz'%nbin):
+                SNs[nbin] = np.load('PCA_bins=%d.npz'%nbin)['SN']
+                R_Ps[nbin] = np.load('PCA_bins=%d.npz'%nbin)['R_P']
+                weights[nbin] = np.load('PCA_bins=%d.npz'%nbin)['weights']
+            else:
+                SNs[nbin], R_Ps[nbin] = estims[nbin].PCA(noise_lmax, ells_PCA, Rs[nbin], ClTT, csms[nbin].Clgg, csms[nbin].Cltaudg, cvvs[nbin])
+                weights[nbin] = ( np.abs(R_Ps[nbin][0,-1,:]) / np.linalg.norm(R_Ps[nbin][0,-1,:]) )**2  # indexed as: first ell (best SNR), first principal component (best weights), all bins. Squared so that sum(w) = 1
         theory = np.zeros((nbin, 6144))
         for b in np.arange(nbin):
             for ell in np.arange(6144):
