@@ -399,26 +399,31 @@ if __name__ == '__main__':
                 weights[nbin] = np.load('PCA_bins=%d.npz'%nbin)['weights']
             else:
                 SNs[nbin], R_Ps[nbin] = estims[nbin].PCA(noise_lmax, ells_PCA, Rs[nbin], ClTT, csms[nbin].Clgg, csms[nbin].Cltaudg, cvvs[nbin])
-                weights[nbin] = ( np.abs(R_Ps[nbin][0,-1,:]) / np.linalg.norm(R_Ps[nbin][0,-1,:]) )**2  # indexed as: first ell (best SNR), first principal component (best weights), all bins. Squared so that sum(w) = 1
+            weighting = ( R_Ps[nbin][0,-1,:] / np.linalg.norm(R_Ps[nbin][0,-1,:]) )[:,np.newaxis]   # First ell (best SNR), first PC (including further PCs results in negative eigenvalues and weighted spectra at nbin=4+)
+            weights[nbin] = np.diag(np.dot(weighting, weighting.T))
         theory = np.zeros((nbin, 6144))
         for b in np.arange(nbin):
             for ell in np.arange(6144):
                 theory[b,ell] = np.dot(np.dot(Rs[nbin], cvvs[nbin][ell,:,:]), Rs[nbin].T)[b,b]
         theory_signal[nbin] = np.sum(theory * weights[nbin][:,np.newaxis], axis=0)
-        vrecon = np.zeros((nbin, 12*2048**2))
+        #vrecon = np.zeros((nbin, 12*2048**2))
+        recon_cls = np.zeros((nbin, 6144))
         noises = np.zeros((nbin, 6144))
         for b in np.arange(nbin):
             print('bin %d/%d' % (b+1,nbin))
             recon_tag = estims[nbin].get_recon_tag('SMICA', 'unWISE', False, False, '') + 'bin_%d' % b
             estims[nbin].reconstruct(b, SMICAmap_real, gmap_full_real, ClTT, csms[nbin].Clgg[0,0,:], mask_map, csms[nbin].Cltaudg[b,0,:], recon_tag, noise_lmax=noise_lmax, store_filtered_maps=False)
-            vrecon[b,:] = estims[nbin].reconstructions[recon_tag]
+            #vrecon[b,:] = estims[nbin].reconstructions[recon_tag]
+            recon_cls[b,:] = estims[nbin].Cls[recon_tag]
             noises[b,:] = estims[nbin].noises[recon_tag]
         recon_tag = estims[nbin].get_recon_tag('SMICA', 'unWISE', False, False, '')
-        real_out_map = np.sum(vrecon * weights[nbin][:,np.newaxis], axis=0)
+        #real_out_map = np.sum(vrecon * weights[nbin][:,np.newaxis], axis=0)
+        recon_weighted_Cls = np.sum(recon_cls * weights[nbin][:,np.newaxis], axis=0)
         noise_comb   = np.sum(noises * weights[nbin][:,np.newaxis], axis=0)
-        estims[nbin].reconstructions[recon_tag] = real_out_map.copy()
+        #estims[nbin].reconstructions[recon_tag] = real_out_map.copy()
         estims[nbin].noises[recon_tag] = noise_comb.copy()
-        estims[nbin].Cls[recon_tag] = hp.anafast(real_out_map)
+        #estims[nbin].Cls[recon_tag] = hp.anafast(real_out_map)
+        estims[nbin].Cls[recon_tag] = recon_weighted_Cls.copy()
 
     fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3,figsize=(15,10))
     recon_tag = estims[nbin].get_recon_tag('SMICA', 'unWISE', False, False, '')  # same for each case
@@ -437,6 +442,19 @@ if __name__ == '__main__':
 
     fig.suptitle('SMICA x unWISE Reconstruction\n'+r'$%.2f\leq z\leq %.2f$,  $P_{ee}\neq P_{mm}$' % (conf.z_min, conf.z_max))
     plt.savefig(outdir+'different_binning_cases.png')
+
+    fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2,3,figsize=(15,10))
+    recon_tag = estims[nbin].get_recon_tag('SMICA', 'unWISE', False, False, '')  # same for each case
+    for nbin, ax in zip(binnings,(ax1,ax2,ax3,ax4,ax5,ax6)):
+        zs = csms[nbin].chi_to_z(csms[nbin].chi_bin_boundaries)
+        mid_zs = np.array([0.5*(zs[i]+zs[i+1]) for i in np.arange(nbin)])
+        ax.semilogy(mid_zs,weights[nbin])
+        ax.set_xlabel(r'z')
+        ax.set_ylabel('weight')
+        ax.set_title('%d bins' % nbin)
+
+    fig.suptitle('SMICA x unWISE Reconstruction\n'+r'$%.2f\leq z\leq %.2f$,  $P_{ee}\neq P_{mm}$' % (conf.z_min, conf.z_max))
+    plt.savefig(outdir+'different_weighting_cases.png')
 
     ###################################################################
     ###                                                             ###
