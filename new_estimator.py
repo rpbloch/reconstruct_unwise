@@ -234,7 +234,7 @@ ratio_mm_me = terms_with_mm_me_entry / terms
 velocity_compute_ells = np.append(np.unique(np.geomspace(1,30,10).astype(int)),100)
 clv = np.zeros((velocity_compute_ells.shape[0],redshifts.shape[0],redshifts.shape[0]))
 for l in range(velocity_compute_ells.shape[0]):
-	print('l = %d' % l)
+	print('l = %d' % velocity_compute_ells[l])
 	for z1 in range(redshifts.shape[0]):
 		for z2 in range(redshifts.shape[0]):
 			integrand_k = scipy.special.spherical_jn(velocity_compute_ells[l],ks*chis[z1])*scipy.special.spherical_jn(velocity_compute_ells[l],ks*chis[z2]) * (h[z1]/(1+redshifts[z1]))*(h[z2]/(1+redshifts[z2])) * np.sqrt(PKv.P(redshifts[z1],ks)*PKv.P(redshifts[z2],ks))
