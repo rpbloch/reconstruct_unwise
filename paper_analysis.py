@@ -1,9 +1,3 @@
-'''
-# ### Would be nice to do multiple realizations to see the cosmic variance error bars
-# ### Might be too big a project, but we could consider what happens if we inpaint without destroying correlations
-# ### As masking grows what is effect on reconstruction
-'''
-
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
 plt.rcParams.update({'axes.labelsize' : 12, 'axes.titlesize' : 16, 'figure.titlesize' : 16})
@@ -38,7 +32,7 @@ class Cosmology(object):
         c = 3.19
         z0 = 5.42
         return a*(z+b)**0.02 * (1-np.tanh(c*(z-z0)))
-    def bias_e2(self, z, k):  # Supposed b^2 = P_ee/P_mm(dmo) bias given in eq. 20, 21. # Verified that b^2 / fe(z)**.5 matches ReCCO em exactly (and squared matches ee exactly).
+    def bias_e2(self, z, k):
         bstar2 = lambda z : 0.971 - 0.013*z
         gamma = lambda z : 1.91 - 0.59*z + 0.10*z**2
         kstar = lambda z : 4.36 - 3.24*z + 3.10*z**2 - 0.42*z**3
@@ -46,9 +40,20 @@ class Cosmology(object):
         for zid, redshift in enumerate(z):
             bias_squared[zid, :] = bstar2(redshift) / ( 1 + (k/kstar(redshift))**gamma(redshift) ) / self.fe(redshift)**.5
         return bias_squared
-    def __init__(self, nbin):
-        self.zmin = conf.z_min
-        self.zmax = conf.z_max
+    def __init__(self, nbin, zmin, zmax, redshifts=None, ks=None):
+        self.zmin = zmin
+        self.zmax = zmax
+        if redshifts is None:
+            self.redshifts = conf.zs_hm.copy()
+        else:
+            self.redshifts = redshifts
+        if ks is None:
+            log_kmax = 2
+            log_kmin = -5
+            k_res = 1000
+            self.ks = np.logspace(log_kmin, log_kmax, num=k_res)  #k-sampling 
+        else:
+            self.ks = ks
         self.nbin = nbin
         self.Clmm = None
         self.cambpars = camb.CAMBparams()
@@ -58,8 +63,8 @@ class Cosmology(object):
                                                   TCMB =2.725 )
         self.cambpars.InitPower.set_params(As =conf.As*1e-9 ,ns=conf.ns, r=0)
         self.cambpars.NonLinear = model.NonLinear_both
-        self.cambpars.max_eta_k = 14000.0*conf.ks_hm[-1]
-        self.cambpars.set_matter_power(redshifts=conf.zs_hm.tolist(), kmax=conf.ks_hm[-1], k_per_logint=20)
+        self.cambpars.max_eta_k = 14000.0*self.ks[-1]
+        self.cambpars.set_matter_power(redshifts=self.redshifts.tolist(), kmax=self.ks[-1], k_per_logint=20)
         self.cosmology_data = camb.get_background(self.cambpars)
         self.bin_width = (self.cosmology_data.comoving_radial_distance(self.zmax)-self.cosmology_data.comoving_radial_distance(self.zmin)) / self.nbin
         self.chi_bin_boundaries = np.linspace(self.z_to_chi(self.zmin), self.z_to_chi(self.zmax), self.nbin+1)
@@ -69,7 +74,7 @@ class Cosmology(object):
         return self.cosmology_data.comoving_radial_distance(z)
     def get_limber_window(self, tag, chis, avg=False, gwindow_zdep=1.2):
         # Return limber window function for observable in units of 1/Mpc
-        thompson_SI = 6.6524e-29
+        thomson_SI = 6.6524e-29
         m_per_Mpc = 3.086e22
         if tag == 'm':
             window = np.repeat(1 / self.bin_width, chis.size)
@@ -81,14 +86,14 @@ class Cosmology(object):
             galaxy_bias = (0.8+gwindow_zdep*self.chi_to_z(chis))  # Changed from 0.8 + 1.2z to better fit inpainted unWISE map spectrum
             window = galaxy_bias * interp1d(z ,dndz, kind= 'linear', bounds_error=False, fill_value=0)(self.chi_to_z(chis)) * self.cosmology_data.h_of_z(self.chi_to_z(chis))
         elif tag == 'taud':
-            window = (-thompson_SI * self.ne0() * (1+self.chi_to_z(chis))**2 * m_per_Mpc)
+            window = (-thomson_SI * self.ne0() * (1+self.chi_to_z(chis))**2 * m_per_Mpc)
         if avg:  # Returns unitless window
             return simps(window, chis)
         else:    # Returns 1/Mpc window so that integral over Pkk will return unitless Cls
             return window
     def compute_Cls(self, ngbar, gwindow_zdep=1.2, use_m_to_e=True):
         ells = np.unique(np.append(np.geomspace(1,6143,120).astype(int), 6143))
-        Pmm_full = camb.get_matter_power_interpolator(self.cambpars, nonlinear=True,  hubble_units=False, k_hunit=False, kmax=conf.ks_hm[-1], zmax=conf.zs_hm[-1])
+        Pmm_full = camb.get_matter_power_interpolator(self.cambpars, nonlinear=True,  hubble_units=False, k_hunit=False, kmax=self.ks[-1], zmax=self.redshifts.max())
         self.Clmm = np.zeros((1, 1, 6144))
         self.Clgg = np.zeros((1, 1, 6144))
         self.Cltaudg = np.zeros((self.nbin, 1, 6144))
@@ -118,11 +123,11 @@ class Cosmology(object):
                     else:
                         m_to_e = m_to_e2 = np.ones(Pmm_bin1_chi.shape)
                     Pee_binned_chi = np.sqrt(Pmm_bin1_chi*Pmm_bin2_chi) * m_to_e * m_to_e2
-                    Ctt_bin[taubin, taubin2, l] = simps(Pee_binned_chi * taud1_window * taud2_window / (chis*chis_binned2), np.sqrt(chis*chis_binned2))
+                    Ctt_bin[taubin, taubin2, l] = simps(np.nan_to_num(Pee_binned_chi * taud1_window * taud2_window / (chis*chis_binned2),posinf=0.), np.sqrt(chis*chis_binned2))
                 Pem_bin1_chi = Pmm_bin1_chi * m_to_e
-                Ctg_bin[taubin, l] = simps(Pem_bin1_chi *              galaxy_window_binned * taud1_window   / chis**2, chis)
-            Cmm_bin[l] = simps(Pmm_full_chi * matter_window**2                                   / chis_full**2, chis_full)
-            Cgg_bin[l] = simps(Pmm_full_chi *                  galaxy_window**2                  / chis_full**2, chis_full)
+                Ctg_bin[taubin, l] = simps(np.nan_to_num(Pem_bin1_chi *              galaxy_window_binned * taud1_window   / chis**2,posinf=0.), chis)
+            Cmm_bin[l] = simps(np.nan_to_num(Pmm_full_chi * matter_window**2                                   / chis_full**2,posinf=0.), chis_full)
+            Cgg_bin[l] = simps(np.nan_to_num(Pmm_full_chi *                  galaxy_window**2                  / chis_full**2,posinf=0.), chis_full)
         self.Clmm[0,0,:] = interp1d(ells, Cmm_bin, bounds_error=False, fill_value='extrapolate')(np.arange(6144))
         self.Clgg[0,0,:] = (interp1d(ells, Cgg_bin, bounds_error=False, fill_value='extrapolate')(np.arange(6144)) + 9.2e-8) * ngbar**2
         for b1 in np.arange(self.nbin):

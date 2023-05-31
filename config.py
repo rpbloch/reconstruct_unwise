@@ -3,7 +3,7 @@ import numpy as np
 
 ################ red shift binning
 
-z_max = 1.60 #highest redshift.
+z_max = 2.50 #highest redshift.
 z_min = 0.01 #lowest redshift.
 
 N_bins = 1 #number of red shift bins, uniform in conformal distance.
