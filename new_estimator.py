@@ -418,8 +418,8 @@ plt.savefig(outdir+'velocities2')
 
 plt.figure()
 
-l1, = plt.semilogy(bandpowers(np.arange(ls.max()+1)), bandpowers(recon_Cls_unwisemask[:ells.size] / fsky), label='Planck x unWISE Reconstruction', ls='None', marker='^', zorder=100)
-plt.semilogy(np.arange(1,ls.max()), (recon_Cls_unwisemask[:ells.size] / fsky)[1:ls.max()], c=l1.get_c(), ls='--', alpha=0.5)
+l1, = plt.semilogy(bandpowers(np.arange(ls.max()+1)), bandpowers(recon_Cls_SMICA[:ells.size] / fsky), label='Planck x unWISE Reconstruction', ls='None', marker='^', zorder=100)
+plt.semilogy(np.arange(1,ls.max()), (recon_Cls_SMICA[:ells.size] / fsky)[1:ls.max()], c=l1.get_c(), ls='--', alpha=0.5)
 plt.semilogy(ells[1:], np.repeat(noise_SMICA,ells.size-1), c='k',label='Predicted Noise', ls='--', zorder=10, lw=2)
 plt.xlim([0, 40])
 
@@ -645,8 +645,6 @@ for freq, ax in zip((100,143,217),(ax1, ax2,ax3)):
 plt.savefig(outdir+'Freq_maps.png')
 
 
-###
-#RE
 
 plt.figure()
 hp.mollview(SMICAinp,title='',cbar=False,min=np.mean(SMICAinp)-3*np.std(SMICAinp),max=np.mean(SMICAinp)+3*np.std(SMICAinp),bgcolor='#262628')
