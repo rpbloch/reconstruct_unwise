@@ -175,7 +175,7 @@ results = camb.get_results(pars)
 ### Spectra calculations and estimator
 # Ensure csm object has same cosmology as what we used in our velocity calculation earlier
 chis = results.comoving_radial_distance(redshifts)
-csm = Cosmology(nbin=1,zmin=redshifts.min(), zmax=redshifts.max(), redshifts=redshifts, ks=ks)  # Set up cosmology
+csm = Cosmology(nbin=1,zmin=redshifts.min(), zmax=redshifts.max(), redshifts=redshifts, ks=ks, zerrs=True)  # Set up cosmology
 estim = Estimator(nbin=1)  # Set up estimator
 csm.cambpars = pars
 csm.cosmology_data = camb.get_background(pars)
@@ -378,11 +378,11 @@ n217huge, _ = np.histogram(lowpass_217hugemask[np.where(hugemask_unwise!=0)], bi
 
 ### Fitting
 def gaussian(x, a, b, c):
-	return a*np.exp(-(x-b)**2/(2*c))
+	return a*np.exp(-(x-b)**2/(2*c**2))
 
-popt100, _ = curve_fit(gaussian, centres(bins_hugemask), n100huge, p0=[n100huge.max(),0.00,1e-7])
-popt143, _ = curve_fit(gaussian, centres(bins_hugemask), n143huge, p0=[n143huge.max(),0.00,1e-7])
-popt217, _ = curve_fit(gaussian, centres(bins_hugemask), n217huge, p0=[n217huge.max(),0.00,1e-7])
+popt100, _ = curve_fit(gaussian, centres(bins_hugemask), n100huge, p0=[n100huge.max(),0.00,1e-7**.5])
+popt143, _ = curve_fit(gaussian, centres(bins_hugemask), n143huge, p0=[n143huge.max(),0.00,1e-7**.5])
+popt217, _ = curve_fit(gaussian, centres(bins_hugemask), n217huge, p0=[n217huge.max(),0.00,1e-7**.5])
 
 test100 = hp.synfast([noise_100hugemask/2.725**2 for i in np.arange(6144)], 2048)
 test143 = hp.synfast([noise_143hugemask for i in np.arange(6144)], 2048)
@@ -601,8 +601,10 @@ plt.plot(centres(bins)*299792.458, n217, label='217 GHz')
 plt.legend()
 plt.xlabel('km / s')
 plt.ylabel('Npix')
-plt.title('Reconstruction of unWISE x SMICA')
+plt.title('Reconstruction of frequency maps x unWISE')
 plt.savefig(outdir+'hist_freqmaps')
+
+
 
 
 
@@ -705,19 +707,19 @@ for freq, ax in zip((100,143,217),(ax1, ax2,ax3)):
 plt.savefig(outdir+'Foreground_Contributions_Hugemask.png')
 
 
-
 plt.figure()
 l1, = plt.plot(centres(bins_hugemask)*299792.458, n100huge, label='100 GHz')
-plt.plot(centres(bins_hugemask)*299792.458, gaussian(centres(bins_hugemask),n100huge.max(),popt100[1],pixvar100),c=l1.get_c(),ls='--')
+plt.plot(centres(bins_hugemask)*299792.458, gaussian(centres(bins_hugemask),*popt100),c=l1.get_c(),ls='--')
 l2, = plt.plot(centres(bins_hugemask)*299792.458, n143huge, label='143 GHz')
-plt.plot(centres(bins_hugemask)*299792.458, gaussian(centres(bins_hugemask),n143huge.max(),popt143[1],pixvar143),c=l2.get_c(),ls='--')
+plt.plot(centres(bins_hugemask)*299792.458, gaussian(centres(bins_hugemask),*popt143),c=l2.get_c(),ls='--')
 l3, = plt.plot(centres(bins_hugemask)*299792.458, n217huge, label='217 GHz')
-plt.plot(centres(bins_hugemask)*299792.458, gaussian(centres(bins_hugemask),n217huge.max(),popt217[1],pixvar217),c=l3.get_c(),ls='--')
+plt.plot(centres(bins_hugemask)*299792.458, gaussian(centres(bins_hugemask),*popt217),c=l3.get_c(),ls='--')
 plt.legend()
 plt.xlabel('km / s')
 plt.ylabel('Npix')
 plt.title('Reconstruction of frequency maps x unWISE\nwith mask = planck fsky 20% x unWISE')
 plt.savefig(outdir+'hist_freqmaps_hugemask')
+
 
 
 
@@ -727,6 +729,150 @@ plt.savefig(outdir+'hist_freqmaps_hugemask')
 
 # Tasks:
 # Start writing: data sets, pipeline, stuff that's fixed. Put plots in the right sections and type up around them.
-# Map-level: reconstruction on full sky minus reconstruction on thermal dust - how close to CMB reconstruction?
+# Map-level: reconstruction on full sky minus reconstruction on thermal dust - how close to CMB reconstruction?   -  not close at all
+plt.figure()
+hp.mollview(lowpass_output*unwise_mask,title='SMICA x unWISE')
+plt.savefig(outdir+'SMICA_out')
+
+plt.figure()
+hp.mollview(lowpass(outmap_100 - outmap_thermaldust_100)*unwise_mask,title=r'$v_{\mathrm{100 GHz}}-v_{\mathrm{dust}}$')
+plt.savefig(outdir+'subtraction_100GHz')
+plt.figure()
+hp.mollview(lowpass(outmap_143 - outmap_thermaldust_143)*unwise_mask,title=r'$v_{\mathrm{143 GHz}}-v_{\mathrm{dust}}$')
+plt.savefig(outdir+'subtraction_143GHz')
+plt.figure()
+hp.mollview(lowpass(outmap_217 - outmap_thermaldust_217)*unwise_mask,title=r'$v_{\mathrm{217 GHz}}-v_{\mathrm{dust}}$')
+plt.savefig(outdir+'subtraction_217GHz')
+
+
 # Add normal product distro to 1-pt plot, specifically the SMICA x unWISE reconstruction
+from scipy.integrate import simps
+from scipy.special import kn
+bessel = lambda bins, Tmap, lssmap : kn(0, np.abs(centres(bins)) / (np.std(Tmap)*np.std(lssmap)))
+normal_product = lambda bins, Tmap, lssmap : bessel(bins,Tmap,lssmap) / (np.pi * np.std(Tmap) * np.std(lssmap))
+pixel_scaling = lambda distribution : (12*2048**2) * (distribution / simps(distribution))
+pixel_scaling_masked = lambda distribution, FSKY : (12*2048**2) * FSKY * (distribution / simps(distribution))
+
+ClTT_filter = ClTT.copy()
+ClTT_filter[:100] = 0.
+Clgg_filter = csm.Clgg[0,0,:].copy()
+Clgg_filter[:100] = 0.
+Clgg_filter[spectra_lmax:] = 0.
+Tlms = hp.almxfl(hp.map2alm(SMICAmap_real), np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0))
+lsslms = hp.almxfl(hp.map2alm(unWISEmap), np.divide(Cltaug_at_zbar.copy(), Clgg_filter, out=np.zeros_like(Cltaug_at_zbar), where=Clgg_filter!=0))
+
+Tmap = hp.alm2map(Tlms, 2048)
+lssmap = hp.alm2map(lsslms,2048)
+normprod_SMICA_unwise = bessel(bins,Tmap,lssmap*noise_SMICA) / (np.pi * np.std(Tmap) * np.std(lssmap*noise_SMICA))
+
+narf,barf,_ = plt.hist(outmap_SMICA[np.where(unwise_mask!=0)],bins=10000)
+klkfsf = bessel(barf,Tmap,lssmap* noise_SMICA) / (np.pi * np.std(Tmap) * np.std(lssmap* noise_SMICA))
+plt.figure()
+plt.plot(centres(barf)*299792.458, narf, label='Reconstruction')
+plt.plot(centres(barf)*299792.458, fsky**.5 * 12*2048**2* klkfsf / simps(klkfsf), label='Normal Product Distribution',ls='--')
+plt.legend()
+plt.xlabel('km / s')
+plt.ylabel('Npix')
+plt.title('Reconstruction of unWISE x SMICA')
+plt.xlim([-3e4,3e4])
+plt.savefig(outdir+'1pt')
+
+n_Tmap, bins_Tmap, _ = plt.hist(Tmap[np.where(unwise_mask!=0)],bins=np.linspace(-3*np.std(Tmap),3*np.std(Tmap),1000))
+n_lssmap, bins_lssmap, _ = plt.hist(lssmap[np.where(unwise_mask!=0)],bins=np.linspace(-3*np.std(lssmap),3*np.std(lssmap),1000))
+
+popt_SMICA, pcov_SMICA = curve_fit(gaussian, centres(bins_Tmap), n_Tmap, p0=[np.max(n_Tmap), 0., np.std(Tmap[np.where(unwise_mask!=0)])])
+popt_unWISE, pcov_unWISE = curve_fit(gaussian, centres(bins_lssmap), n_lssmap, p0=[np.max(n_lssmap), 0., np.std(lssmap[np.where(unwise_mask!=0)])])
+
+fig, (ax1, ax2) = plt.subplots(1,2,figsize=(10,4))
+ax1.plot(centres(bins_Tmap),n_Tmap, label='Filtered SMICA')
+ax1.plot(centres(bins_Tmap), gaussian(centres(bins_Tmap), *popt_SMICA), c='k', ls='--', label='Gaussian Fit')
+ax1.set_title('Temperature Map')
+ax1.legend()
+ax2.plot(centres(bins_lssmap), n_lssmap, label='Filtered unWISE')
+ax2.plot(centres(bins_lssmap), gaussian(centres(bins_lssmap), *popt_unWISE), c='k', ls='--', label='Gaussian Fit')
+ax2.set_title('LSS Map')
+ax2.legend()
+plt.savefig(outdir+'input_histograms')
+
+
+
+
+test1=np.random.normal(size=12*2048**2)
+test2=np.random.normal(size=12*2048**2)
+testprod = test1*test2
+
+fig, (ax1, ax2, ax3) = plt.subplots(1,3,figsize=(15,4))
+_,_,_ = ax1.hist(test1,bins=300)
+_,_,_ = ax2.hist(test2,bins=300)
+testprod_n,testprod_bins,_ = ax3.hist(testprod,bins=300)
+ax3.plot(centres(testprod_bins), 12*2048**2 * bessel(testprod_bins,test1,test2) / (np.pi * np.std(test1) * np.std(test2)) / simps(bessel(testprod_bins,test1,test2) / (np.pi * np.std(test1) * np.std(test2))))
+plt.savefig(outdir+'test_normprod')
+
 # do statistical errors for velocity: 1000 gauss of windowed V on the sky -> mask them -> find mean and variance of masked realizations
+
+
+
+# Effect of photo z errors
+csm_new = Cosmology(nbin=1,zmin=redshifts.min(), zmax=redshifts.max(), redshifts=redshifts, ks=ks, zerrs=False)  # Set up cosmology
+csm_new.cambpars = pars
+csm_new.cosmology_data = camb.get_background(pars)
+csm_new.bin_width = chis[-1] - chis[0]
+csm_new.compute_Cls(ngbar=ngbar)  # These are the integrated Cls over the entire bin
+
+plt.figure()
+plt.loglog(csm_new.Clgg[0,0,:], label='No error')
+plt.loglog(csm.Clgg[0,0,:], label='With photo-z + catastrophic error')
+plt.xlabel(r'$\ell$')
+plt.ylabel(r'$C_\ell^{\mathrm{gg}}$')
+plt.legend()
+plt.savefig(outdir+'clgg')
+
+
+# Delta z of around 0.1, with a 1% chance of being around 1
+with open('data/unWISE/blue.txt', 'r') as FILE:
+    x = FILE.readlines()
+
+z = np.array([float(l.split(' ')[0]) for l in x])
+dndz = np.array([float(l.split(' ')[1]) for l in x])
+
+counts_unwise_mask = 81808220
+counts_per_zbin = (dndz*counts_unwise_mask*0.01/simps(dndz,z)).astype(int)
+catastrophic_counts = (counts_per_zbin * 0.01).astype(int)
+
+redshifts_of_counts = np.zeros(counts_per_zbin.sum())
+cursor = 0
+for i, z_val in enumerate(z):
+    zbin_counts_distribution = np.random.normal(loc=z_val, scale=0.05, size=counts_per_zbin[i])
+    photoz_catastrophic = np.random.choice([0,1],size=catastrophic_counts[i])*-2+1  # \pm 1 delta z
+    zbin_counts_distribution[:photoz_catastrophic.size] += photoz_catastrophic
+    redshifts_of_counts[cursor:cursor+zbin_counts_distribution.size] = zbin_counts_distribution
+    cursor += zbin_counts_distribution.size
+
+n_counts, _ = np.histogram(redshifts_of_counts, bins=z)
+dndz_err = n_counts * simps(dndz,z) / simps(n_counts, 0.5*(z[1:]+z[:-1]))
+
+redshifts_of_counts = np.zeros(counts_per_zbin.sum())
+cursor = 0
+for i, z_val in enumerate(z):
+    zbin_counts_distribution = np.random.normal(loc=z_val, scale=0.05, size=counts_per_zbin[i])
+    redshifts_of_counts[cursor:cursor+zbin_counts_distribution.size] = zbin_counts_distribution
+    cursor += zbin_counts_distribution.size
+
+n_counts, _ = np.histogram(redshifts_of_counts, bins=z)
+dndz_err_nocatastrophic = n_counts * simps(dndz,z) / simps(n_counts, 0.5*(z[1:]+z[:-1]))
+
+fig, (ax1, ax2) = plt.subplots(1,2,figsize=(12,6))
+ax1.plot(z,dndz, label='no errors')
+ax1.plot(centres(z),dndz_err_nocatastrophic,label='with photo-z error')
+ax1.plot(centres(z),dndz_err,label='with photo-z + catastrophic error')
+ax1.legend()
+ax2.semilogy(z,dndz,label='no errors')
+ax2.semilogy(centres(z),dndz_err_nocatastrophic,label='with photo-z error')
+ax2.semilogy(centres(z),dndz_err,label='with photo-z + catastrophic error')
+ax2.legend()
+for ax in (ax1, ax2):
+	ax.set_xlabel('z')
+	ax.set_ylabel('dN / dz')
+
+plt.savefig(outdir+'dndz_errs')
+

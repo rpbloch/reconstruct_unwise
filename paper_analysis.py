@@ -40,9 +40,10 @@ class Cosmology(object):
         for zid, redshift in enumerate(z):
             bias_squared[zid, :] = bstar2(redshift) / ( 1 + (k/kstar(redshift))**gamma(redshift) ) / self.fe(redshift)**.5
         return bias_squared
-    def __init__(self, nbin, zmin, zmax, redshifts=None, ks=None):
+    def __init__(self, nbin, zmin, zmax, redshifts=None, ks=None, zerrs=True):
         self.zmin = zmin
         self.zmax = zmax
+        self.zerrs = zerrs
         if redshifts is None:
             self.redshifts = conf.zs_hm.copy()
         else:
@@ -76,6 +77,8 @@ class Cosmology(object):
         # Return limber window function for observable in units of 1/Mpc
         thomson_SI = 6.6524e-29
         m_per_Mpc = 3.086e22
+        if self.zerrs and tag == 'g':
+            tag = 'gerr_read'
         if tag == 'm':
             window = np.repeat(1 / self.bin_width, chis.size)
         elif tag == 'g':
@@ -85,6 +88,37 @@ class Cosmology(object):
             dndz = np.array([float(l.split(' ')[1]) for l in x])
             galaxy_bias = (0.8+gwindow_zdep*self.chi_to_z(chis))  # Changed from 0.8 + 1.2z to better fit inpainted unWISE map spectrum
             window = galaxy_bias * interp1d(z ,dndz, kind= 'linear', bounds_error=False, fill_value=0)(self.chi_to_z(chis)) * self.cosmology_data.h_of_z(self.chi_to_z(chis))
+        elif tag == 'gerr':
+            # Delta z of around 0.1, with a 1% chance of being around 1
+            with open('data/unWISE/blue.txt', 'r') as FILE:
+                x = FILE.readlines()
+            counts_unwise_mask = 81808220
+            z = np.array([float(l.split(' ')[0]) for l in x])
+            dndz = np.array([float(l.split(' ')[1]) for l in x])
+            counts_per_zbin = (dndz*counts_unwise_mask*0.01/simps(dndz,z)).astype(int)
+            catastrophic_counts = (counts_per_zbin * 0.01).astype(int)
+            redshifts_of_counts = np.zeros(counts_per_zbin.sum())
+            cursor = 0
+            for i, z_val in enumerate(z):
+                zbin_counts_distribution = np.random.normal(loc=z_val, scale=0.05, size=counts_per_zbin[i])
+                photoz_catastrophic = np.random.choice([0,1],size=catastrophic_counts[i])*-2+1  # \pm 1 delta z
+                zbin_counts_distribution[:photoz_catastrophic.size] += photoz_catastrophic
+                redshifts_of_counts[cursor:cursor+zbin_counts_distribution.size] = zbin_counts_distribution
+                cursor += zbin_counts_distribution.size
+            n_counts, _ = np.histogram(redshifts_of_counts, bins=z)
+            dndz_err = n_counts * simps(dndz,z) / simps(n_counts, 0.5*(z[1:]+z[:-1]))
+            np.save('data/unWISE/blue_window_gerr.npy', dndz_err)
+            galaxy_bias = (0.8+gwindow_zdep*self.chi_to_z(chis))  # Changed from 0.8 + 1.2z to better fit inpainted unWISE map spectrum
+            window = galaxy_bias * interp1d(0.5*(z[1:]+z[:-1]) ,dndz_err, kind= 'linear', bounds_error=False, fill_value=0)(self.chi_to_z(chis)) * self.cosmology_data.h_of_z(self.chi_to_z(chis))
+        elif tag == 'gerr_read':
+            if not os.path.exists('data/unWISE/blue_window_gerr.npy'):
+                self.get_limber_window(tag='gerr', chis=chis, avg=avg, gwindow_zdep=gwindow_zdep)
+            dndz_err = np.load('data/unWISE/blue_window_gerr.npy')
+            with open('data/unWISE/blue.txt', 'r') as FILE:
+                x = FILE.readlines()
+            z = np.array([float(l.split(' ')[0]) for l in x])
+            galaxy_bias = (0.8+gwindow_zdep*self.chi_to_z(chis))  # Changed from 0.8 + 1.2z to better fit inpainted unWISE map spectrum
+            window = galaxy_bias * interp1d(0.5*(z[1:]+z[:-1]) ,dndz_err, kind= 'linear', bounds_error=False, fill_value=0)(self.chi_to_z(chis)) * self.cosmology_data.h_of_z(self.chi_to_z(chis))
         elif tag == 'taud':
             window = (-thomson_SI * self.ne0() * (1+self.chi_to_z(chis))**2 * m_per_Mpc)
         if avg:  # Returns unitless window
