@@ -119,13 +119,20 @@ class Cosmology(object):
             z = np.array([float(l.split(' ')[0]) for l in x])
             galaxy_bias = (0.8+gwindow_zdep*self.chi_to_z(chis))  # Changed from 0.8 + 1.2z to better fit inpainted unWISE map spectrum
             window = galaxy_bias * interp1d(0.5*(z[1:]+z[:-1]) ,dndz_err, kind= 'linear', bounds_error=False, fill_value=0)(self.chi_to_z(chis)) * self.cosmology_data.h_of_z(self.chi_to_z(chis))
+        elif tag.startswith('gerr_alex'):
+            with open('data/unWISE/blue_dNdz_err/%s.txt' % tag.split('gerr_alex_')[1].split('.')[0], 'r') as FILE:
+                x = FILE.readlines()
+            z = np.array([float(l.split(' ')[0]) for l in x])
+            dndz = np.array([float(l.split(' ')[1]) for l in x])
+            galaxy_bias = (0.8+gwindow_zdep*self.chi_to_z(chis))  # Changed from 0.8 + 1.2z to better fit inpainted unWISE map spectrum
+            window = galaxy_bias * interp1d(z ,dndz, kind= 'linear', bounds_error=False, fill_value=0)(self.chi_to_z(chis)) * self.cosmology_data.h_of_z(self.chi_to_z(chis))
         elif tag == 'taud':
             window = (-thomson_SI * self.ne0() * (1+self.chi_to_z(chis))**2 * m_per_Mpc)
         if avg:  # Returns unitless window
             return simps(window, chis)
         else:    # Returns 1/Mpc window so that integral over Pkk will return unitless Cls
             return window
-    def compute_Cls(self, ngbar, gwindow_zdep=1.2, use_m_to_e=True):
+    def compute_Cls(self, ngbar, gtag='g', gwindow_zdep=1.2, use_m_to_e=True):
         ells = np.unique(np.append(np.geomspace(1,6143,120).astype(int), 6143))
         Pmm_full = camb.get_matter_power_interpolator(self.cambpars, nonlinear=True,  hubble_units=False, k_hunit=False, kmax=self.ks[-1], zmax=self.redshifts.max())
         self.Clmm = np.zeros((1, 1, 6144))
@@ -134,7 +141,7 @@ class Cosmology(object):
         self.Cltaudtaud = np.zeros((self.nbin, self.nbin, 6144))
         chis_full = np.linspace(self.chi_bin_boundaries[0], self.chi_bin_boundaries[-1], 1000)
         matter_window = self.get_limber_window('m',    chis_full, avg=False, gwindow_zdep=gwindow_zdep)
-        galaxy_window = self.get_limber_window('g',    chis_full, avg=False, gwindow_zdep=gwindow_zdep)
+        galaxy_window = self.get_limber_window(gtag,    chis_full, avg=False, gwindow_zdep=gwindow_zdep)
         Cmm_bin = np.zeros(ells.size)
         Cgg_bin = np.zeros(ells.size)
         Ctg_bin = np.zeros((self.nbin, ells.size))
@@ -143,7 +150,7 @@ class Cosmology(object):
             Pmm_full_chi = np.diagonal(np.flip(Pmm_full.P(self.chi_to_z(chis_full), (ell+0.5)/chis_full[::-1], grid=True), axis=1))
             for taubin in np.arange(self.nbin):            
                 chis = np.linspace(self.chi_bin_boundaries[taubin], self.chi_bin_boundaries[taubin+1], 300)
-                galaxy_window_binned = self.get_limber_window('g', chis, avg=False, gwindow_zdep=gwindow_zdep)
+                galaxy_window_binned = self.get_limber_window(gtag, chis, avg=False, gwindow_zdep=gwindow_zdep)
                 taud1_window  = self.get_limber_window('taud', chis, avg=False, gwindow_zdep=gwindow_zdep)        
                 Pmm_bin1_chi = np.diagonal(np.flip(Pmm_full.P(self.chi_to_z(chis), (ell+0.5)/chis[::-1], grid=True), axis=1))
                 for taubin2 in np.arange(self.nbin):

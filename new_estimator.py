@@ -563,29 +563,29 @@ fig, (ax1, ax2, ax3) = plt.subplots(1,3,figsize=(18,6))
 ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_100[:ells.size]              / fsky)[1:ls.max()] / premask_fudge, label='Full Sky')
 ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_100foregrounds[:ells.size]   / fsky)[1:ls.max()] / premask_fudge, label='SMICA Subtracted Sky')
 ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_thermaldust_100[:ells.size]  / fsky)[1:ls.max()] / premask_fudge, label='Thermal Dust Sim')
-ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_freefree_100[:ells.size]     / fsky)[1:ls.max()] / premask_fudge, label='Free-Free Emission Sim')
-ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_synchrotron_100[:ells.size]  / fsky)[1:ls.max()] / premask_fudge, label='Synchrotron Sim')
-ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_spinningdust_100[:ells.size] / fsky)[1:ls.max()] / premask_fudge, label='Spinning Dust Sim')
+#ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_freefree_100[:ells.size]     / fsky)[1:ls.max()] / premask_fudge, label='Free-Free Emission Sim')
+#ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_synchrotron_100[:ells.size]  / fsky)[1:ls.max()] / premask_fudge, label='Synchrotron Sim')
+#ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_spinningdust_100[:ells.size] / fsky)[1:ls.max()] / premask_fudge, label='Spinning Dust Sim')
 # 143 GHz
 ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_143[:ells.size]              / fsky)[1:ls.max()] / premask_fudge, label='Full Sky')
 ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_143foregrounds[:ells.size]   / fsky)[1:ls.max()] / premask_fudge, label='SMICA Subtracted Sky')
 ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_thermaldust_143[:ells.size]  / fsky)[1:ls.max()] / premask_fudge, label='Thermal Dust Sim')
-ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_freefree_143[:ells.size]     / fsky)[1:ls.max()] / premask_fudge, label='Free-Free Emission Sim')
-ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_synchrotron_143[:ells.size]  / fsky)[1:ls.max()] / premask_fudge, label='Synchrotron Sim')
+#ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_freefree_143[:ells.size]     / fsky)[1:ls.max()] / premask_fudge, label='Free-Free Emission Sim')
+#ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_synchrotron_143[:ells.size]  / fsky)[1:ls.max()] / premask_fudge, label='Synchrotron Sim')
 #ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_spinningdust_143[:ells.size] / fsky)[1:ls.max()] / premask_fudge, label='Spinning Dust Sim')
 # 217 GHz
 ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_217[:ells.size]              / fsky)[1:ls.max()] / premask_fudge, label='Full Sky')
 ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_217foregrounds[:ells.size]   / fsky)[1:ls.max()] / premask_fudge, label='SMICA Subtracted Sky')
 ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_thermaldust_217[:ells.size]  / fsky)[1:ls.max()] / premask_fudge, label='Thermal Dust Sim')
-ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_freefree_217[:ells.size]     / fsky)[1:ls.max()] / premask_fudge, label='Free-Free Emission Sim')
-ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_synchrotron_217[:ells.size]  / fsky)[1:ls.max()] / premask_fudge, label='Synchrotron Sim')
+#ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_freefree_217[:ells.size]     / fsky)[1:ls.max()] / premask_fudge, label='Free-Free Emission Sim')
+#ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_synchrotron_217[:ells.size]  / fsky)[1:ls.max()] / premask_fudge, label='Synchrotron Sim')
 #ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_spinningdust_217[:ells.size] / fsky)[1:ls.max()] / premask_fudge, label='Spinning Dust Sim')
 
 
 for freq, ax in zip((100,143,217),(ax1, ax2,ax3)):
 	_ = ax.set_xticks(bandpowers(np.arange(1,ls.max()+1)), ['%d' % ell for ell in bandpowers(np.arange(1,ls.max()+1))])
 	ax.set_xlim([0, 50])
-	ax.set_ylim([5e-14, 5e-7])
+	ax.set_ylim([5e-11, 5e-7])
 	ax.set_title('%dGHz'%freq)
 	ax.set_ylabel(r'$\frac{v^2}{c^2}$  ', rotation=0.,fontsize=16)
 	ax.set_xlabel(r'$\ell$',fontsize=16)
@@ -654,7 +654,7 @@ plt.savefig(outdir+'SMICA input')
 
 
 plt.figure()
-hp.mollview(unWISEmap,title='',cbar=False,max=15,bgcolor='#262628')
+hp.mollview(unWISEmap,title='unWISE blue sample',max=20)
 plt.savefig(outdir+'unWISE input')
 
 plt.figure()
@@ -676,29 +676,29 @@ fig, (ax1, ax2, ax3) = plt.subplots(1,3,figsize=(18,6))
 ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_100hugemask[:ells.size]              / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Full Sky')
 ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_100hugemaskforegrounds[:ells.size]   / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='SMICA Subtracted Sky')
 ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_thermaldust_100hugemask[:ells.size]  / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Thermal Dust Sim')
-ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_freefree_100hugemask[:ells.size]     / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Free-Free Emission Sim')
-ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_synchrotron_100hugemask[:ells.size]  / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Synchrotron Sim')
-ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_spinningdust_100hugemask[:ells.size] / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Spinning Dust Sim')
+#ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_freefree_100hugemask[:ells.size]     / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Free-Free Emission Sim')
+#ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_synchrotron_100hugemask[:ells.size]  / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Synchrotron Sim')
+#ax1.semilogy(np.arange(1,ls.max()), (recon_Cls_spinningdust_100hugemask[:ells.size] / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Spinning Dust Sim')
 # 143 GHz
 ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_143hugemask[:ells.size]              / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Full Sky')
 ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_143hugemaskforegrounds[:ells.size]   / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='SMICA Subtracted Sky')
 ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_thermaldust_143hugemask[:ells.size]  / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Thermal Dust Sim')
-ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_freefree_143hugemask[:ells.size]     / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Free-Free Emission Sim')
-ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_synchrotron_143hugemask[:ells.size]  / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Synchrotron Sim')
+#ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_freefree_143hugemask[:ells.size]     / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Free-Free Emission Sim')
+#ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_synchrotron_143hugemask[:ells.size]  / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Synchrotron Sim')
 #ax2.semilogy(np.arange(1,ls.max()), (recon_Cls_spinningdust_143hugemask[:ells.size] / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Spinning Dust Sim')
 # 217 GHz
 ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_217hugemask[:ells.size]              / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Full Sky')
 ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_217hugemaskforegrounds[:ells.size]   / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='SMICA Subtracted Sky')
 ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_thermaldust_217hugemask[:ells.size]  / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Thermal Dust Sim')
-ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_freefree_217hugemask[:ells.size]     / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Free-Free Emission Sim')
-ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_synchrotron_217hugemask[:ells.size]  / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Synchrotron Sim')
+#ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_freefree_217hugemask[:ells.size]     / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Free-Free Emission Sim')
+#ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_synchrotron_217hugemask[:ells.size]  / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Synchrotron Sim')
 #ax3.semilogy(np.arange(1,ls.max()), (recon_Cls_spinningdust_217hugemask[:ells.size] / fsky_huge)[1:ls.max()] / (premask_fudge * fsky / fsky_huge), label='Spinning Dust Sim')
 
 
 for freq, ax in zip((100,143,217),(ax1, ax2,ax3)):
 	_ = ax.set_xticks(bandpowers(np.arange(1,ls.max()+1)), ['%d' % ell for ell in bandpowers(np.arange(1,ls.max()+1))])
 	ax.set_xlim([0, 50])
-	#ax.set_ylim([5e-14, 5e-7])
+	ax.set_ylim([5e-13, 1e-6])
 	ax.set_title('%dGHz'%freq)
 	ax.set_ylabel(r'$\frac{v^2}{c^2}$  ', rotation=0.,fontsize=16)
 	ax.set_xlabel(r'$\ell$',fontsize=16)
@@ -723,6 +723,128 @@ plt.savefig(outdir+'hist_freqmaps_hugemask')
 
 
 
+# Weight maps
+# These are nside 256 healpix maps in Galactic coordinates. (actually N128)
+# To apply the weights, you multiply the counts map by both weight maps for that galaxy sample.
+# I've separated the 2 imaging systematics (star density and W2 depth) so that you can study the impact of applying only one weight map instead of both.
+
+weights_bluestar = hp.ud_grade(fits.open('data/unWISE/blue_star_weights.fits')[1].data['I'].flatten(), 2048)
+weights_w2 = hp.ud_grade(fits.open('data/unWISE/blue_w2_5sig_weights.fits')[1].data['I'].flatten(), 2048)
+
+hp.mollview(weights_bluestar,title='blue star weights')
+plt.savefig(outdir+'bluestar')
+hp.mollview(weights_w2, title='W2 weights')
+plt.savefig(outdir+'W2')
+
+hp.mollview(unWISEmap*unwise_mask,title='unweighted counts map')
+plt.savefig(outdir+'unWISE_unweighted')
+hp.mollview(unWISEmap*unwise_mask*weights_bluestar*weights_w2, title='weighted counts map')
+plt.savefig(outdir+'unWISE_weighted')
+
+
+
+_, _, outmap_217_weighted = estim.combine(T217map_real, unWISEmap*weights_bluestar*weights_w2, unwise_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
+_, _, outmap_SMICA_unwise_weighted = estim.combine(SMICAmap_real, unWISEmap*weights_bluestar*weights_w2, unwise_mask, ClTT, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_SMICA,6144), convert_K=False)
+
+recon_Cls_SMICA_unwise_weighted = hp.anafast(outmap_SMICA_unwise_weighted)
+recon_Cls_217_weighted = hp.anafast(outmap_217_weighted)
+
+plt.figure()
+plt.semilogy(np.arange(1,ls.max()), (recon_Cls_217[:ells.size]/fsky)[1:ls.max()], label='unweighted')
+plt.semilogy(np.arange(1,ls.max()), (recon_Cls_217_weighted[:ells.size]/fsky)[1:ls.max()], label='weighted')
+plt.legend()
+plt.savefig(outdir+'217_recon_weight_vs_unweight')
+
+
+plt.figure()
+
+l1, = plt.semilogy(bandpowers(np.arange(ls.max()+1)), bandpowers(recon_Cls_SMICA_unwise_weighted[:ells.size] / fsky), label='Planck x unWISE Reconstruction', ls='None', marker='^', zorder=100)
+plt.semilogy(np.arange(1,ls.max()), (recon_Cls_SMICA_unwise_weighted[:ells.size] / fsky)[1:ls.max()], c=l1.get_c(), ls='--', alpha=0.5)
+plt.semilogy(np.arange(1,ls.max()), (recon_Cls_SMICA[:ells.size] / fsky)[1:ls.max()], ls='--', alpha=0.5)
+plt.semilogy(ells[1:], np.repeat(noise_SMICA,ells.size-1), c='k',label='Predicted Noise', ls='--', zorder=10, lw=2)
+plt.xlim([0, 40])
+
+
+mean_unwisemask = np.mean(gauss_unwisemask['Cl_Tgauss_greal'],axis=0) / fsky
+std_unwisemask  = np.std( gauss_unwisemask['Cl_Tgauss_greal'],axis=0) / fsky
+err_min_unwisemask = mean_unwisemask - std_unwisemask
+err_max_unwisemask = mean_unwisemask + std_unwisemask
+maxerr_min_unwisemask = mean_unwisemask - 5*std_unwisemask
+maxerr_max_unwisemask = mean_unwisemask + 5*std_unwisemask
+
+plt.fill_between(ells[1:], err_min_unwisemask[1:ells.size], err_max_unwisemask[1:ells.size],label='100x Gaussian Reconstructions',alpha=0.35)
+plt.fill_between(ells[1:], err_min_unwisemask[1:ells.size], maxerr_max_unwisemask[1:ells.size],alpha=0.15,color='#1f77b4')
+
+mean_planckmask = np.mean(gauss_planckmask['Cl_Tgauss_greal'],axis=0) / fsky_huge
+std_planckmask  = np.std( gauss_planckmask['Cl_Tgauss_greal'],axis=0) / fsky_huge
+err_min_planckmask = mean_planckmask - std_planckmask
+err_max_planckmask = mean_planckmask + std_planckmask
+y1,y2=plt.ylim()
+
+plt.fill_between(ells, interp1d(velocity_compute_ells, clv_windowed,bounds_error=False,fill_value=0.)(np.arange(ells.size)), interp1d(velocity_compute_ells, clv_windowed_mm_me,bounds_error=False,fill_value=0.)(np.arange(ells.size)), label='Velocity Signal')
+
+plt.ylim([y1,y2])
+plt.legend()
+plt.xlabel(r'$\ell$')
+plt.ylabel(r'$\frac{v^2}{c^2}$',rotation=0,fontsize=16)
+plt.title('Planck x unWISE Reconstruction')
+
+plt.tight_layout()
+plt.savefig(outdir+'signal_noise_gauss_weighted.png')
+
+
+
+
+####
+# Test to see what Gaussian reconstruction + signal V realization looks like
+if not os.path.exists("data/gauss_reals/noise_plus_velocity.npz"):
+	print('Computing velocity + noise for dndz reals')
+	Cltaug_at_zbar_mm_me = interp1d(fullspectrum_ls, (Pmms[zbar_index,:] * galaxy_window_binned * taud1_window   / chibar**2) * csm.bin_width * ngbar, bounds_error=False, fill_value='extrapolate')(np.arange(6144))
+	noise_SMICA_mm_me = estim.Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=1, cltt=ClTT.copy(), clgg_binned=csm.Clgg[0,0,:].copy(), cltaudg_binned=Cltaug_at_zbar_mm_me.copy())
+	clv_windowed_interp_mm_me = interp1d(velocity_compute_ells,clv_windowed_mm_me,fill_value=0.,bounds_error=False)(np.arange(6144))
+	for big_i in np.arange(7,10):
+		velocity_noise_Cls = []
+		velocity_noise_Cls_mm_me = []
+		for i in np.arange(100):
+			print('big_i = %d, i=%d'%(big_i, i))
+			SMICA_gauss_realization = hp.alm2map(hp.almxfl(hp.map2alm(hp.synfast(hp.anafast(SMICAinp*cltt_measure_mask)/fsky_cltt, 2048)), 1/SMICAbeam), 2048)
+			_, _, outmap_gauss_realization = estim.combine(SMICA_gauss_realization, unWISEmap, unwise_mask,  ClTT, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_SMICA,6144), convert_K=False)
+			_, _, outmap_gauss_realization_mm_me = estim.combine(SMICA_gauss_realization, unWISEmap, unwise_mask,  ClTT, csm.Clgg[0,0,:], Cltaug_at_zbar_mm_me.copy(), np.repeat(noise_SMICA_mm_me,6144), convert_K=False)
+			v_realization = hp.synfast(clv_windowed_interp, 2048)
+			v_realization_mm_me = hp.synfast(clv_windowed_interp_mm_me, 2048)
+			constructed_signalmap = v_realization*unwise_mask + outmap_gauss_realization
+			constructed_signalmap_mm_me = v_realization_mm_me*unwise_mask + outmap_gauss_realization_mm_me
+			velocity_noise_Cls.append(hp.anafast(constructed_signalmap)/fsky)
+			velocity_noise_Cls_mm_me.append(hp.anafast(constructed_signalmap_mm_me)/fsky)
+		velocity_noise_Cls = np.array(velocity_noise_Cls)
+		velocity_noise_Cls_mm_me = np.array(velocity_noise_Cls_mm_me)
+		np.savez("data/gauss_reals/noise_plus_velocity_%d-%d.npz"%(big_i*100,(big_i+1)*100-1), v_plus_n=velocity_noise_Cls,v_mm_me_plus_n_mm_me=velocity_noise_Cls_mm_me)
+else:
+	velocity_noise_Cls = np.load("data/gauss_reals/noise_plus_velocity.npz")['v_plus_n']
+	velocity_noise_Cls_mm_me = np.load("data/gauss_reals/noise_plus_velocity.npz")['v_mm_me_plus_n_mm_me']
+
+
+plt.figure()
+l1, = plt.semilogy(bandpowers(np.arange(ls.max()+1)), bandpowers(recon_Cls_SMICA[:ells.size] / fsky), label='Planck x unWISE', ls='None', marker='^', zorder=100)
+l2, = plt.semilogy(bandpowers(np.arange(ls.max()+1)), bandpowers(np.mean(velocity_noise_Cls,axis=0)[:ells.size] / fsky), label='Gaussian SMICA x unWISE + Velocity', ls='None', marker='^', zorder=100)
+plt.semilogy(np.arange(1,ls.max()), (recon_Cls_SMICA[:ells.size] / fsky)[1:ls.max()], color=l1.get_c(),alpha=0.5)
+plt.semilogy(np.arange(1,ls.max()), (recon_Cls_constructed[:ells.size] / fsky)[1:ls.max()], alpha=0.5,color=l2.get_c())
+plt.semilogy(ells[1:], np.repeat(noise_SMICA,ells.size-1), c='k',label='Predicted Noise', ls='--', zorder=10, lw=1)
+plt.fill_between(ells[1:], (np.mean(velocity_noise_Cls,axis=0)-np.std(velocity_noise_Cls,axis=0))[1:ells.size]/fsky, (np.mean(velocity_noise_Cls,axis=0)+np.std(velocity_noise_Cls,axis=0))[1:ells.size]/fsky,label='100x Realizations',alpha=0.35)
+
+plt.xlim([0, 40])
+
+plt.legend()
+plt.xlabel(r'$\ell$')
+plt.ylabel(r'$\frac{v^2}{c^2}$',rotation=0,fontsize=16)
+plt.title('Planck x unWISE Reconstruction')
+
+plt.tight_layout()
+plt.savefig(outdir+'signal_noise_gauss_constructed.png')
+
+
+
+
 # Questions:
 # Gaussian for theory noise on histogram: are we tightening because of less low ell crap or because it's a part of how the noise behaves?
 # Can we learn some physics from our result? Is there an optical depth map from the planck sky model we can use?
@@ -730,149 +852,249 @@ plt.savefig(outdir+'hist_freqmaps_hugemask')
 # Tasks:
 # Start writing: data sets, pipeline, stuff that's fixed. Put plots in the right sections and type up around them.
 # Map-level: reconstruction on full sky minus reconstruction on thermal dust - how close to CMB reconstruction?   -  not close at all
-plt.figure()
-hp.mollview(lowpass_output*unwise_mask,title='SMICA x unWISE')
-plt.savefig(outdir+'SMICA_out')
+# plt.figure()
+# hp.mollview(lowpass_output*unwise_mask,title='SMICA x unWISE')
+# plt.savefig(outdir+'SMICA_out')
 
-plt.figure()
-hp.mollview(lowpass(outmap_100 - outmap_thermaldust_100)*unwise_mask,title=r'$v_{\mathrm{100 GHz}}-v_{\mathrm{dust}}$')
-plt.savefig(outdir+'subtraction_100GHz')
-plt.figure()
-hp.mollview(lowpass(outmap_143 - outmap_thermaldust_143)*unwise_mask,title=r'$v_{\mathrm{143 GHz}}-v_{\mathrm{dust}}$')
-plt.savefig(outdir+'subtraction_143GHz')
-plt.figure()
-hp.mollview(lowpass(outmap_217 - outmap_thermaldust_217)*unwise_mask,title=r'$v_{\mathrm{217 GHz}}-v_{\mathrm{dust}}$')
-plt.savefig(outdir+'subtraction_217GHz')
-
-
-# Add normal product distro to 1-pt plot, specifically the SMICA x unWISE reconstruction
-from scipy.integrate import simps
-from scipy.special import kn
-bessel = lambda bins, Tmap, lssmap : kn(0, np.abs(centres(bins)) / (np.std(Tmap)*np.std(lssmap)))
-normal_product = lambda bins, Tmap, lssmap : bessel(bins,Tmap,lssmap) / (np.pi * np.std(Tmap) * np.std(lssmap))
-pixel_scaling = lambda distribution : (12*2048**2) * (distribution / simps(distribution))
-pixel_scaling_masked = lambda distribution, FSKY : (12*2048**2) * FSKY * (distribution / simps(distribution))
-
-ClTT_filter = ClTT.copy()
-ClTT_filter[:100] = 0.
-Clgg_filter = csm.Clgg[0,0,:].copy()
-Clgg_filter[:100] = 0.
-Clgg_filter[spectra_lmax:] = 0.
-Tlms = hp.almxfl(hp.map2alm(SMICAmap_real), np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0))
-lsslms = hp.almxfl(hp.map2alm(unWISEmap), np.divide(Cltaug_at_zbar.copy(), Clgg_filter, out=np.zeros_like(Cltaug_at_zbar), where=Clgg_filter!=0))
-
-Tmap = hp.alm2map(Tlms, 2048)
-lssmap = hp.alm2map(lsslms,2048)
-normprod_SMICA_unwise = bessel(bins,Tmap,lssmap*noise_SMICA) / (np.pi * np.std(Tmap) * np.std(lssmap*noise_SMICA))
-
-narf,barf,_ = plt.hist(outmap_SMICA[np.where(unwise_mask!=0)],bins=10000)
-klkfsf = bessel(barf,Tmap,lssmap* noise_SMICA) / (np.pi * np.std(Tmap) * np.std(lssmap* noise_SMICA))
-plt.figure()
-plt.plot(centres(barf)*299792.458, narf, label='Reconstruction')
-plt.plot(centres(barf)*299792.458, fsky**.5 * 12*2048**2* klkfsf / simps(klkfsf), label='Normal Product Distribution',ls='--')
-plt.legend()
-plt.xlabel('km / s')
-plt.ylabel('Npix')
-plt.title('Reconstruction of unWISE x SMICA')
-plt.xlim([-3e4,3e4])
-plt.savefig(outdir+'1pt')
-
-n_Tmap, bins_Tmap, _ = plt.hist(Tmap[np.where(unwise_mask!=0)],bins=np.linspace(-3*np.std(Tmap),3*np.std(Tmap),1000))
-n_lssmap, bins_lssmap, _ = plt.hist(lssmap[np.where(unwise_mask!=0)],bins=np.linspace(-3*np.std(lssmap),3*np.std(lssmap),1000))
-
-popt_SMICA, pcov_SMICA = curve_fit(gaussian, centres(bins_Tmap), n_Tmap, p0=[np.max(n_Tmap), 0., np.std(Tmap[np.where(unwise_mask!=0)])])
-popt_unWISE, pcov_unWISE = curve_fit(gaussian, centres(bins_lssmap), n_lssmap, p0=[np.max(n_lssmap), 0., np.std(lssmap[np.where(unwise_mask!=0)])])
-
-fig, (ax1, ax2) = plt.subplots(1,2,figsize=(10,4))
-ax1.plot(centres(bins_Tmap),n_Tmap, label='Filtered SMICA')
-ax1.plot(centres(bins_Tmap), gaussian(centres(bins_Tmap), *popt_SMICA), c='k', ls='--', label='Gaussian Fit')
-ax1.set_title('Temperature Map')
-ax1.legend()
-ax2.plot(centres(bins_lssmap), n_lssmap, label='Filtered unWISE')
-ax2.plot(centres(bins_lssmap), gaussian(centres(bins_lssmap), *popt_unWISE), c='k', ls='--', label='Gaussian Fit')
-ax2.set_title('LSS Map')
-ax2.legend()
-plt.savefig(outdir+'input_histograms')
+# plt.figure()
+# hp.mollview(lowpass(outmap_100 - outmap_thermaldust_100)*unwise_mask,title=r'$v_{\mathrm{100 GHz}}-v_{\mathrm{dust}}$')
+# plt.savefig(outdir+'subtraction_100GHz')
+# plt.figure()
+# hp.mollview(lowpass(outmap_143 - outmap_thermaldust_143)*unwise_mask,title=r'$v_{\mathrm{143 GHz}}-v_{\mathrm{dust}}$')
+# plt.savefig(outdir+'subtraction_143GHz')
+# plt.figure()
+# hp.mollview(lowpass(outmap_217 - outmap_thermaldust_217)*unwise_mask,title=r'$v_{\mathrm{217 GHz}}-v_{\mathrm{dust}}$')
+# plt.savefig(outdir+'subtraction_217GHz')
 
 
+# # Add normal product distro to 1-pt plot, specifically the SMICA x unWISE reconstruction
+# from scipy.integrate import simps
+# from scipy.special import kn
+# bessel = lambda bins, Tmap, lssmap : kn(0, np.abs(centres(bins)) / (np.std(Tmap)*np.std(lssmap)))
+# normal_product = lambda bins, Tmap, lssmap : bessel(bins,Tmap,lssmap) / (np.pi * np.std(Tmap) * np.std(lssmap))
+# pixel_scaling = lambda distribution : (12*2048**2) * (distribution / simps(distribution))
+# pixel_scaling_masked = lambda distribution, FSKY : (12*2048**2) * FSKY * (distribution / simps(distribution))
 
+# ClTT_filter = ClTT.copy()
+# ClTT_filter[:100] = 0.
+# Clgg_filter = csm.Clgg[0,0,:].copy()
+# Clgg_filter[:100] = 0.
+# Clgg_filter[spectra_lmax:] = 0.
+# Tlms = hp.almxfl(hp.map2alm(SMICAmap_real), np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0))
+# lsslms = hp.almxfl(hp.map2alm(unWISEmap), np.divide(Cltaug_at_zbar.copy(), Clgg_filter, out=np.zeros_like(Cltaug_at_zbar), where=Clgg_filter!=0))
 
-test1=np.random.normal(size=12*2048**2)
-test2=np.random.normal(size=12*2048**2)
-testprod = test1*test2
+# Tmap = hp.alm2map(Tlms, 2048)
+# lssmap = hp.alm2map(lsslms,2048)
+# normprod_SMICA_unwise = bessel(bins,Tmap,lssmap*noise_SMICA) / (np.pi * np.std(Tmap) * np.std(lssmap*noise_SMICA))
 
-fig, (ax1, ax2, ax3) = plt.subplots(1,3,figsize=(15,4))
-_,_,_ = ax1.hist(test1,bins=300)
-_,_,_ = ax2.hist(test2,bins=300)
-testprod_n,testprod_bins,_ = ax3.hist(testprod,bins=300)
-ax3.plot(centres(testprod_bins), 12*2048**2 * bessel(testprod_bins,test1,test2) / (np.pi * np.std(test1) * np.std(test2)) / simps(bessel(testprod_bins,test1,test2) / (np.pi * np.std(test1) * np.std(test2))))
-plt.savefig(outdir+'test_normprod')
+# narf,barf,_ = plt.hist(outmap_SMICA[np.where(unwise_mask!=0)],bins=10000)
+# klkfsf = bessel(barf,Tmap,lssmap* noise_SMICA) / (np.pi * np.std(Tmap) * np.std(lssmap* noise_SMICA))
+# plt.figure()
+# plt.plot(centres(barf)*299792.458, narf, label='Reconstruction')
+# plt.plot(centres(barf)*299792.458, fsky**.5 * 12*2048**2* klkfsf / simps(klkfsf), label='Normal Product Distribution',ls='--')
+# plt.legend()
+# plt.xlabel('km / s')
+# plt.ylabel('Npix')
+# plt.title('Reconstruction of unWISE x SMICA')
+# plt.xlim([-3e4,3e4])
+# plt.savefig(outdir+'1pt')
 
-# do statistical errors for velocity: 1000 gauss of windowed V on the sky -> mask them -> find mean and variance of masked realizations
+# n_Tmap, bins_Tmap, _ = plt.hist(Tmap[np.where(unwise_mask!=0)],bins=np.linspace(-3*np.std(Tmap),3*np.std(Tmap),1000))
+# n_lssmap, bins_lssmap, _ = plt.hist(lssmap[np.where(unwise_mask!=0)],bins=np.linspace(-3*np.std(lssmap),3*np.std(lssmap),1000))
+
+# popt_SMICA, pcov_SMICA = curve_fit(gaussian, centres(bins_Tmap), n_Tmap, p0=[np.max(n_Tmap), 0., np.std(Tmap[np.where(unwise_mask!=0)])])
+# popt_unWISE, pcov_unWISE = curve_fit(gaussian, centres(bins_lssmap), n_lssmap, p0=[np.max(n_lssmap), 0., np.std(lssmap[np.where(unwise_mask!=0)])])
+
+# fig, (ax1, ax2) = plt.subplots(1,2,figsize=(10,4))
+# ax1.plot(centres(bins_Tmap),n_Tmap, label='Filtered SMICA')
+# ax1.plot(centres(bins_Tmap), gaussian(centres(bins_Tmap), *popt_SMICA), c='k', ls='--', label='Gaussian Fit')
+# ax1.set_title('Temperature Map')
+# ax1.legend()
+# ax2.plot(centres(bins_lssmap), n_lssmap, label='Filtered unWISE')
+# ax2.plot(centres(bins_lssmap), gaussian(centres(bins_lssmap), *popt_unWISE), c='k', ls='--', label='Gaussian Fit')
+# ax2.set_title('LSS Map')
+# ax2.legend()
+# plt.savefig(outdir+'input_histograms')
 
 
 
-# Effect of photo z errors
-csm_new = Cosmology(nbin=1,zmin=redshifts.min(), zmax=redshifts.max(), redshifts=redshifts, ks=ks, zerrs=False)  # Set up cosmology
-csm_new.cambpars = pars
-csm_new.cosmology_data = camb.get_background(pars)
-csm_new.bin_width = chis[-1] - chis[0]
-csm_new.compute_Cls(ngbar=ngbar)  # These are the integrated Cls over the entire bin
 
-plt.figure()
-plt.loglog(csm_new.Clgg[0,0,:], label='No error')
-plt.loglog(csm.Clgg[0,0,:], label='With photo-z + catastrophic error')
-plt.xlabel(r'$\ell$')
-plt.ylabel(r'$C_\ell^{\mathrm{gg}}$')
-plt.legend()
-plt.savefig(outdir+'clgg')
+# test1=np.random.normal(size=12*2048**2)
+# test2=np.random.normal(size=12*2048**2)
+# testprod = test1*test2
+
+# fig, (ax1, ax2, ax3) = plt.subplots(1,3,figsize=(15,4))
+# _,_,_ = ax1.hist(test1,bins=300)
+# _,_,_ = ax2.hist(test2,bins=300)
+# testprod_n,testprod_bins,_ = ax3.hist(testprod,bins=300)
+# ax3.plot(centres(testprod_bins), 12*2048**2 * bessel(testprod_bins,test1,test2) / (np.pi * np.std(test1) * np.std(test2)) / simps(bessel(testprod_bins,test1,test2) / (np.pi * np.std(test1) * np.std(test2))))
+# plt.savefig(outdir+'test_normprod')
+
+# # do statistical errors for velocity: 1000 gauss of windowed V on the sky -> mask them -> find mean and variance of masked realizations
 
 
-# Delta z of around 0.1, with a 1% chance of being around 1
-with open('data/unWISE/blue.txt', 'r') as FILE:
-    x = FILE.readlines()
 
-z = np.array([float(l.split(' ')[0]) for l in x])
-dndz = np.array([float(l.split(' ')[1]) for l in x])
+# # Effect of photo z errors
+# csm_new = Cosmology(nbin=1,zmin=redshifts.min(), zmax=redshifts.max(), redshifts=redshifts, ks=ks, zerrs=False)  # Set up cosmology
+# csm_new.cambpars = pars
+# csm_new.cosmology_data = camb.get_background(pars)
+# csm_new.bin_width = chis[-1] - chis[0]
+# csm_new.compute_Cls(ngbar=ngbar)  # These are the integrated Cls over the entire bin
 
-counts_unwise_mask = 81808220
-counts_per_zbin = (dndz*counts_unwise_mask*0.01/simps(dndz,z)).astype(int)
-catastrophic_counts = (counts_per_zbin * 0.01).astype(int)
+# plt.figure()
+# plt.loglog(csm_new.Clgg[0,0,:], label='No error')
+# plt.loglog(csm.Clgg[0,0,:], label='With photo-z + catastrophic error')
+# plt.xlabel(r'$\ell$')
+# plt.ylabel(r'$C_\ell^{\mathrm{gg}}$')
+# plt.legend()
+# plt.savefig(outdir+'clgg')
 
-redshifts_of_counts = np.zeros(counts_per_zbin.sum())
-cursor = 0
-for i, z_val in enumerate(z):
-    zbin_counts_distribution = np.random.normal(loc=z_val, scale=0.05, size=counts_per_zbin[i])
-    photoz_catastrophic = np.random.choice([0,1],size=catastrophic_counts[i])*-2+1  # \pm 1 delta z
-    zbin_counts_distribution[:photoz_catastrophic.size] += photoz_catastrophic
-    redshifts_of_counts[cursor:cursor+zbin_counts_distribution.size] = zbin_counts_distribution
-    cursor += zbin_counts_distribution.size
 
-n_counts, _ = np.histogram(redshifts_of_counts, bins=z)
-dndz_err = n_counts * simps(dndz,z) / simps(n_counts, 0.5*(z[1:]+z[:-1]))
+# # Delta z of around 0.1, with a 1% chance of being around 1
+# with open('data/unWISE/blue.txt', 'r') as FILE:
+#     x = FILE.readlines()
 
-redshifts_of_counts = np.zeros(counts_per_zbin.sum())
-cursor = 0
-for i, z_val in enumerate(z):
-    zbin_counts_distribution = np.random.normal(loc=z_val, scale=0.05, size=counts_per_zbin[i])
-    redshifts_of_counts[cursor:cursor+zbin_counts_distribution.size] = zbin_counts_distribution
-    cursor += zbin_counts_distribution.size
+# z = np.array([float(l.split(' ')[0]) for l in x])
+# dndz = np.array([float(l.split(' ')[1]) for l in x])
 
-n_counts, _ = np.histogram(redshifts_of_counts, bins=z)
-dndz_err_nocatastrophic = n_counts * simps(dndz,z) / simps(n_counts, 0.5*(z[1:]+z[:-1]))
+# counts_unwise_mask = 81808220
+# counts_per_zbin = (dndz*counts_unwise_mask*0.01/simps(dndz,z)).astype(int)
+# catastrophic_counts = (counts_per_zbin * 0.01).astype(int)
 
-fig, (ax1, ax2) = plt.subplots(1,2,figsize=(12,6))
-ax1.plot(z,dndz, label='no errors')
-ax1.plot(centres(z),dndz_err_nocatastrophic,label='with photo-z error')
-ax1.plot(centres(z),dndz_err,label='with photo-z + catastrophic error')
-ax1.legend()
-ax2.semilogy(z,dndz,label='no errors')
-ax2.semilogy(centres(z),dndz_err_nocatastrophic,label='with photo-z error')
-ax2.semilogy(centres(z),dndz_err,label='with photo-z + catastrophic error')
-ax2.legend()
-for ax in (ax1, ax2):
-	ax.set_xlabel('z')
-	ax.set_ylabel('dN / dz')
+# redshifts_of_counts = np.zeros(counts_per_zbin.sum())
+# cursor = 0
+# for i, z_val in enumerate(z):
+#     zbin_counts_distribution = np.random.normal(loc=z_val, scale=0.05, size=counts_per_zbin[i])
+#     photoz_catastrophic = np.random.choice([0,1],size=catastrophic_counts[i])*-2+1  # \pm 1 delta z
+#     zbin_counts_distribution[:photoz_catastrophic.size] += photoz_catastrophic
+#     redshifts_of_counts[cursor:cursor+zbin_counts_distribution.size] = zbin_counts_distribution
+#     cursor += zbin_counts_distribution.size
 
-plt.savefig(outdir+'dndz_errs')
+# n_counts, _ = np.histogram(redshifts_of_counts, bins=z)
+# dndz_err = n_counts * simps(dndz,z) / simps(n_counts, 0.5*(z[1:]+z[:-1]))
+
+# redshifts_of_counts = np.zeros(counts_per_zbin.sum())
+# cursor = 0
+# for i, z_val in enumerate(z):
+#     zbin_counts_distribution = np.random.normal(loc=z_val, scale=0.05, size=counts_per_zbin[i])
+#     redshifts_of_counts[cursor:cursor+zbin_counts_distribution.size] = zbin_counts_distribution
+#     cursor += zbin_counts_distribution.size
+
+# n_counts, _ = np.histogram(redshifts_of_counts, bins=z)
+# dndz_err_nocatastrophic = n_counts * simps(dndz,z) / simps(n_counts, 0.5*(z[1:]+z[:-1]))
+
+# fig, (ax1, ax2) = plt.subplots(1,2,figsize=(12,6))
+# ax1.plot(z,dndz, label='no errors')
+# ax1.plot(centres(z),dndz_err_nocatastrophic,label='with photo-z error')
+# ax1.plot(centres(z),dndz_err,label='with photo-z + catastrophic error')
+# ax1.legend()
+# ax2.semilogy(z,dndz,label='no errors')
+# ax2.semilogy(centres(z),dndz_err_nocatastrophic,label='with photo-z error')
+# ax2.semilogy(centres(z),dndz_err,label='with photo-z + catastrophic error')
+# ax2.legend()
+# for ax in (ax1, ax2):
+# 	ax.set_xlabel('z')
+# 	ax.set_ylabel('dN / dz')
+
+# plt.savefig(outdir+'dndz_errs')
+
+
+
+
+
+
+
+
+
+# import pymaster as nmt
+
+# unwise_mask_apodized_C1 = nmt.mask_apodization(unwise_mask, aposize=5/60, apotype='C1')
+# unwise_mask_apodized_C2 = nmt.mask_apodization(unwise_mask, aposize=5/60, apotype='C2')
+# unwise_mask_apodized_smooth = nmt.mask_apodization(unwise_mask, aposize=5/60, apotype='Smooth')
+
+# f_C1 = nmt.NmtField(unwise_mask_apodized_C1, [outmap_SMICA])
+# f_C2 = nmt.NmtField(unwise_mask_apodized_C2, [outmap_SMICA])
+# f_smooth = nmt.NmtField(unwise_mask_apodized_smooth, [outmap_SMICA])
+# f_gauss_C1 = nmt.NmtField(unwise_mask_apodized_C1, [outmap_gaussreals])
+# f_SMICAinp = nmt.NmtField(unwise_mask_apodized_C1, [SMICAinp])
+
+# smicafull_cls = hp.anafast(SMICAinp)
+# smicamask_cls = hp.anafast(SMICAinp * unwise_mask)
+
+
+
+# for nbin in [1,2,4]:
+# 	b = nmt.NmtBin.from_nside_linear(2048, nbin)
+# 	ell_arr = b.get_effective_ells()
+# 	xlim_includes = np.where(ell_arr<=100)
+# 	recon_Cls_nmtbinned = b.bin_cell(recon_Cls_SMICA / fsky)
+# 	recon_Cls_gaussreals_nmtbinned = b.bin_cell(recon_Cls_gaussreals / fsky)
+# 	cl_gauss_C1 = nmt.compute_full_master(f_gauss_C1, f_gauss_C1, b)
+# 	cl_SMICAinp = nmt.compute_full_master(f_SMICAinp, f_SMICAinp, b)
+# 	Cl_SMICA_full = b.bin_cell(smicafull_cls)
+# 	Cl_SMICA_masked = b.bin_cell(smicamask_cls / fsky)
+# 	plt.figure()
+# 	plt.loglog(ell_arr[xlim_includes], recon_Cls_gaussreals_nmtbinned[xlim_includes], label='recon TT')
+# 	plt.loglog(ell_arr[xlim_includes], cl_gauss_C1[0,xlim_includes][0], label=r'master TT apodized 5$^\prime$ C1')
+# 	plt.xlabel(r'$\ell$')
+# 	plt.ylabel(r'$C_\ell$')
+# 	plt.legend()
+# 	plt.savefig(outdir+'namaster_gauss_bin%d' % nbin)
+# 	plt.figure()
+# 	plt.loglog(ell_arr[xlim_includes], Cl_SMICA_full[xlim_includes], label='full TT')
+# 	plt.loglog(ell_arr[xlim_includes], Cl_SMICA_masked[xlim_includes], label=r'masked TT')
+# 	plt.loglog(ell_arr[xlim_includes], cl_SMICAinp[0,xlim_includes][0], label=r'master TT masked apodized 5$^\prime$ C1')
+# 	plt.xlabel(r'$\ell$')
+# 	plt.ylabel(r'$C_\ell$')
+# 	plt.legend()
+# 	plt.savefig(outdir+'namaster_test_bin%d' % nbin)
+
+
+
+
+
+
+
+# cl_C1 = nmt.compute_full_master(f_C1, f_C1, b)
+# cl_C2 = nmt.compute_full_master(f_C2, f_C2, b)
+# cl_smooth = nmt.compute_full_master(f_smooth, f_smooth, b)
+# plt.figure()
+# plt.loglog(ell_arr[xlim_includes], recon_Cls_nmtbinned[xlim_includes], label='recon TT')
+# plt.loglog(ell_arr[xlim_includes], cl_C1[0,xlim_includes][0], label=r'master TT apodized 5$^\prime$ C1')
+# plt.loglog(ell_arr[xlim_includes], cl_C2[0,xlim_includes][0], label=r'master TT apodized 5$^\prime$ C2')
+# plt.loglog(ell_arr[xlim_includes], cl_smooth[0,xlim_includes][0], label=r'master TT apodized 5$^\prime$ smooth')
+# plt.xlabel(r'$\ell$')
+# plt.ylabel(r'$C_\ell$')
+# plt.legend()
+# plt.savefig(outdir+'namaster_apotype')
+
+
+
+
+
+# cltt_measure_mask = hp.reorder(fits.open('data/masks/planck/HFI_Mask_GalPlane-apo0_2048_R2.00.fits')[1].data['GAL070'],n2r=True)
+
+# galcut_apodized = nmt.mask_apodization(cltt_measure_mask, aposize=60/60, apotype='C1')
+
+# #galmask_smicacl=hp.anafast(SMICAinp * cltt_measure_mask)
+# testgauss =  hp.synfast([1/(m+1)**.5 for m in np.arange(6144)], 2048)
+# arfing = hp.anafast(testgauss * cltt_measure_mask)
+# f_galcut = nmt.NmtField(galcut_apodized, [testgauss])
+
+# for nbin in [5]:
+# 	b = nmt.NmtBin.from_nside_linear(2048, nbin)
+# 	ell_arr = b.get_effective_ells()
+# 	xlim_includes = np.where(ell_arr<=100)
+# 	cl_galcut = nmt.compute_full_master(f_galcut, f_galcut, b)
+# 	Cl_SMICA_full = b.bin_cell(hp.anafast(testgauss))
+# 	Cl_SMICA_masked = b.bin_cell(arfing / (np.where(cltt_measure_mask!=0)[0].size/cltt_measure_mask.size))
+# 	plt.figure()
+# 	plt.loglog(ell_arr[xlim_includes], Cl_SMICA_full[xlim_includes], label='full TT')
+# 	plt.loglog(ell_arr[xlim_includes], Cl_SMICA_masked[xlim_includes], label=r'masked TT')
+# 	plt.loglog(ell_arr[xlim_includes], cl_galcut[0,xlim_includes][0], label=r'master TT apodized 5$^\prime$ C1')
+# 	plt.xlabel(r'$\ell$')
+# 	plt.ylabel(r'$C_\ell$')
+# 	plt.legend()
+# 	plt.savefig(outdir+'namaster_galcut070_bin%d_gauss60' % nbin)
+
 
