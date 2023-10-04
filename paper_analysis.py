@@ -252,6 +252,22 @@ class Estimator(object):
         if convert_K:  # output map has units of K
             outmap /= 2.725
         return Tmap_filtered * const_noise, lssmap_filtered, outmap
+    def combine_alm(self, dTlm, dlm, mask, ClTT, Clgg, Cltaudg, Noise, lmax, convert_K=False):
+        ClTT_filter = ClTT.copy()[:lmax+1]
+        Clgg_filter = Clgg.copy()[:lmax+1]
+        Cltaudg = Cltaudg.copy()[:lmax+1]
+        ClTT_filter[:100] = 1e15
+        Clgg_filter[:100] = 1e15
+        dTlm_xi = hp.almxfl(dTlm, np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0))
+        dlm_zeta = hp.almxfl(dlm, np.divide(Cltaudg, Clgg_filter, out=np.zeros_like(Cltaudg), where=Clgg_filter!=0))
+        Tmap_filtered = hp.alm2map(dTlm_xi, lmax=lmax, nside=2048) * mask
+        lssmap_filtered = hp.alm2map(dlm_zeta, lmax=lmax, nside=2048) * mask
+        outmap_filtered = Tmap_filtered*lssmap_filtered
+        const_noise = np.median(Noise[10:100])
+        outmap = outmap_filtered * const_noise * mask
+        if convert_K:  # output map has units of K
+            outmap /= 2.725
+        return Tmap_filtered * const_noise, lssmap_filtered, outmap
     def combine_harmonic(self, Tmap, lssmap, mask, ClTT, Clgg, Cltaudg, Noise, convert_K=False):
         dTlm = hp.map2alm(Tmap)
         dlm  = hp.map2alm(lssmap)

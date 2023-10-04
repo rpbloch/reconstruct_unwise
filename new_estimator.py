@@ -34,9 +34,13 @@ SMICAinp = hp.reorder(fits.open('data/planck_data_testing/maps/COM_CMB_IQU-smica
 unWISEmap = fits.open('data/unWISE/numcounts_map1_2048-r1-v2_flag.fits')[1].data['T'].flatten()
 
 unwise_mask = np.load('data/mask_unWISE_thres_v10.npy')
+planckmask = hp.reorder(fits.open('data/planck_data_testing/COM_Mask_CMB-common-Mask-Int_2048_R3.00.fits')[1].data['TMASK'],n2r=True)
+
+total_mask = unwise_mask * planckmask
+
 huge_mask = hp.reorder(fits.open('data/masks/planck/HFI_Mask_GalPlane-apo0_2048_R2.00.fits')[1].data['GAL020'],n2r=True)
-cltt_measure_mask = hp.reorder(fits.open('data/masks/planck/HFI_Mask_GalPlane-apo0_2048_R2.00.fits')[1].data['GAL070'],n2r=True)
-hugemask_unwise = huge_mask.astype(np.float32) * unwise_mask
+cltt_measure_mask = planckmask.copy()
+hugemask_unwise = huge_mask.astype(np.float32) * unwise_mask * planckmask
 
 T100inp = hp.reorder(fits.open('data/planck_data_testing/maps/HFI_SkyMap_100_2048_R3.01_full.fits')[1].data['I_STOKES'], n2r=True)
 T143inp = hp.reorder(fits.open('data/planck_data_testing/maps/HFI_SkyMap_143_2048_R3.01_full.fits')[1].data['I_STOKES'], n2r=True) / 2.725
@@ -66,7 +70,8 @@ freefree_217 = fits.open('data/planck_data_testing/foregrounds/COM_SimMap_freefr
 
 ####
 # Map-based values
-fsky = np.where(unwise_mask!=0)[0].size / unwise_mask.size
+fsky = np.where(total_mask!=0)[0].size / total_mask.size
+fsky_unwise = np.where(unwise_mask!=0)[0].size / unwise_mask.size
 fsky_cltt = np.where(cltt_measure_mask!=0)[0].size / cltt_measure_mask.size
 fsky_huge = np.where(hugemask_unwise!=0)[0].size / hugemask_unwise.size
 ngbar = unWISEmap.sum() / unWISEmap.size  # Needed to scale delta to galaxy
@@ -81,38 +86,38 @@ T100beam[spectra_lmax:] = T100beam[spectra_lmax]  # Extremely high beam for 100G
 
 ###
 # Masking / masking + debeaming maps
-SMICAmap_real = hp.alm2map(hp.almxfl(hp.map2alm(SMICAinp), 1/SMICAbeam), 2048)  # De-beamed unitless SMICA map
-SMICAmap_premask = hp.alm2map(hp.almxfl(hp.map2alm(SMICAinp*unwise_mask), 1/SMICAbeam), 2048)  # De-beamed unitless SMICA map
+SMICAmap_real = hp.alm2map(hp.almxfl(hp.map2alm(SMICAinp*cltt_measure_mask), 1/SMICAbeam), 2048)  # De-beamed unitless SMICA map
+SMICAmap_premask = hp.alm2map(hp.almxfl(hp.map2alm(SMICAinp*total_mask), 1/SMICAbeam), 2048)  # De-beamed unitless SMICA map
 SMICAmap_gauss = hp.alm2map(hp.almxfl(hp.map2alm(hp.synfast(hp.anafast(SMICAinp*cltt_measure_mask)/fsky_cltt, 2048)), 1/SMICAbeam), 2048)
 
-T100_alms_masked_debeamed = hp.almxfl(hp.map2alm(T100inp*unwise_mask), 1/T100beam)
-T143_alms_masked_debeamed = hp.almxfl(hp.map2alm(T143inp*unwise_mask), 1/T143beam)
-T217_alms_masked_debeamed = hp.almxfl(hp.map2alm(T217inp*unwise_mask), 1/T217beam)
+T100_alms_masked_debeamed = hp.almxfl(hp.map2alm(T100inp*total_mask), 1/T100beam)
+T143_alms_masked_debeamed = hp.almxfl(hp.map2alm(T143inp*total_mask), 1/T143beam)
+T217_alms_masked_debeamed = hp.almxfl(hp.map2alm(T217inp*total_mask), 1/T217beam)
 T100map_real = hp.alm2map(T100_alms_masked_debeamed, nside=2048)
 T143map_real = hp.alm2map(T143_alms_masked_debeamed, nside=2048)
 T217map_real = hp.alm2map(T217_alms_masked_debeamed, nside=2048)
 
-Tmap_noCMB_100_masked_debeamed_alms = hp.almxfl(hp.map2alm(Tmap_noCMB_100*unwise_mask), 1/T100beam)
-Tmap_noCMB_143_masked_debeamed_alms = hp.almxfl(hp.map2alm(Tmap_noCMB_143*unwise_mask), 1/T143beam)
-Tmap_noCMB_217_masked_debeamed_alms = hp.almxfl(hp.map2alm(Tmap_noCMB_217*unwise_mask), 1/T217beam)
+Tmap_noCMB_100_masked_debeamed_alms = hp.almxfl(hp.map2alm(Tmap_noCMB_100*total_mask), 1/T100beam)
+Tmap_noCMB_143_masked_debeamed_alms = hp.almxfl(hp.map2alm(Tmap_noCMB_143*total_mask), 1/T143beam)
+Tmap_noCMB_217_masked_debeamed_alms = hp.almxfl(hp.map2alm(Tmap_noCMB_217*total_mask), 1/T217beam)
 Tmap_noCMB_100_masked_debeamed = hp.alm2map(Tmap_noCMB_100_masked_debeamed_alms, 2048)
 Tmap_noCMB_143_masked_debeamed = hp.alm2map(Tmap_noCMB_143_masked_debeamed_alms, 2048)
 Tmap_noCMB_217_masked_debeamed = hp.alm2map(Tmap_noCMB_217_masked_debeamed_alms, 2048)
 
-Tmap_synchrotron_100 = hp.alm2map(hp.almxfl(hp.map2alm(synchrotron_100*unwise_mask), 1/T100beam), 2048)
-Tmap_thermaldust_100 = hp.alm2map(hp.almxfl(hp.map2alm(thermaldust_100*unwise_mask), 1/T100beam), 2048)
-Tmap_spinningdust_100 = hp.alm2map(hp.almxfl(hp.map2alm(spinningdust_100*unwise_mask), 1/T100beam), 2048)
-Tmap_freefree_100 = hp.alm2map(hp.almxfl(hp.map2alm(freefree_100*unwise_mask), 1/T100beam), 2048)
+Tmap_synchrotron_100 = hp.alm2map(hp.almxfl(hp.map2alm(synchrotron_100*total_mask), 1/T100beam), 2048)
+Tmap_thermaldust_100 = hp.alm2map(hp.almxfl(hp.map2alm(thermaldust_100*total_mask), 1/T100beam), 2048)
+Tmap_spinningdust_100 = hp.alm2map(hp.almxfl(hp.map2alm(spinningdust_100*total_mask), 1/T100beam), 2048)
+Tmap_freefree_100 = hp.alm2map(hp.almxfl(hp.map2alm(freefree_100*total_mask), 1/T100beam), 2048)
 
-Tmap_synchrotron_143 = hp.alm2map(hp.almxfl(hp.map2alm(synchrotron_143*unwise_mask), 1/T143beam), 2048)
-Tmap_thermaldust_143 = hp.alm2map(hp.almxfl(hp.map2alm(thermaldust_143*unwise_mask), 1/T143beam), 2048)
-Tmap_spinningdust_143 = hp.alm2map(hp.almxfl(hp.map2alm(spinningdust_143*unwise_mask), 1/T143beam), 2048)
-Tmap_freefree_143 = hp.alm2map(hp.almxfl(hp.map2alm(freefree_143*unwise_mask), 1/T143beam), 2048)
+Tmap_synchrotron_143 = hp.alm2map(hp.almxfl(hp.map2alm(synchrotron_143*total_mask), 1/T143beam), 2048)
+Tmap_thermaldust_143 = hp.alm2map(hp.almxfl(hp.map2alm(thermaldust_143*total_mask), 1/T143beam), 2048)
+Tmap_spinningdust_143 = hp.alm2map(hp.almxfl(hp.map2alm(spinningdust_143*total_mask), 1/T143beam), 2048)
+Tmap_freefree_143 = hp.alm2map(hp.almxfl(hp.map2alm(freefree_143*total_mask), 1/T143beam), 2048)
 
-Tmap_synchrotron_217 = hp.alm2map(hp.almxfl(hp.map2alm(synchrotron_217*unwise_mask), 1/T217beam), 2048)
-Tmap_thermaldust_217 = hp.alm2map(hp.almxfl(hp.map2alm(thermaldust_217*unwise_mask), 1/T217beam), 2048)
-Tmap_spinningdust_217 = hp.alm2map(hp.almxfl(hp.map2alm(spinningdust_217*unwise_mask), 1/T217beam), 2048)
-Tmap_freefree_217 = hp.alm2map(hp.almxfl(hp.map2alm(freefree_217*unwise_mask), 1/T217beam), 2048)
+Tmap_synchrotron_217 = hp.alm2map(hp.almxfl(hp.map2alm(synchrotron_217*total_mask), 1/T217beam), 2048)
+Tmap_thermaldust_217 = hp.alm2map(hp.almxfl(hp.map2alm(thermaldust_217*total_mask), 1/T217beam), 2048)
+Tmap_spinningdust_217 = hp.alm2map(hp.almxfl(hp.map2alm(spinningdust_217*total_mask), 1/T217beam), 2048)
+Tmap_freefree_217 = hp.alm2map(hp.almxfl(hp.map2alm(freefree_217*total_mask), 1/T217beam), 2048)
 
 Tmap_100_hugemasked_debeamed = hp.alm2map(hp.almxfl(hp.map2alm(T100inp*hugemask_unwise), 1/T100beam), 2048)
 Tmap_noCMB_100_hugemasked_debeamed = hp.alm2map(hp.almxfl(hp.map2alm(Tmap_noCMB_100*hugemask_unwise), 1/T100beam), 2048)
@@ -136,7 +141,7 @@ Tmap_spinningdust_217hugemask = hp.alm2map(hp.almxfl(hp.map2alm(spinningdust_217
 Tmap_freefree_217hugemask = hp.alm2map(hp.almxfl(hp.map2alm(freefree_217*hugemask_unwise), 1/T217beam), 2048)
 
 # Power spectra
-ClTT = hp.anafast(SMICAmap_real)
+ClTT = hp.anafast(SMICAmap_real) / fsky
 ClTT_premask = hp.anafast(SMICAmap_premask) / fsky
 ClTT_100 = hp.alm2cl(T100_alms_masked_debeamed) / fsky
 ClTT_143 = hp.alm2cl(T143_alms_masked_debeamed) / fsky
@@ -273,27 +278,27 @@ noise_217hugemask = estim.Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=1, 
 lowpass = lambda MAP : hp.alm2map(hp.almxfl(hp.map2alm(MAP), [0 if l > 50 else 1 for l in np.arange(6144)]), 2048)
 centres = lambda BIN : (BIN[:-1]+BIN[1:]) / 2
 
-_, _, outmap_gaussreals = estim.combine(SMICAmap_gauss, unWISEmap, unwise_mask,  ClTT, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_SMICA,6144), convert_K=False)
-_, _, outmap_SMICA = estim.combine(SMICAmap_real, unWISEmap, unwise_mask, ClTT, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_SMICA,6144), convert_K=False)
-_, _, outmap_SMICApremask = estim.combine(SMICAmap_premask, unWISEmap, unwise_mask, ClTT_premask, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_SMICApremask,6144), convert_K=False)
-_, _, outmap_100 = estim.combine(T100map_real, unWISEmap, unwise_mask, ClTT_100, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100,6144), convert_K=True)
-_, _, outmap_143 = estim.combine(T143map_real, unWISEmap, unwise_mask, ClTT_143, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_143,6144), convert_K=False)
-_, _, outmap_217 = estim.combine(T217map_real, unWISEmap, unwise_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
-_, _, outmap_100foregrounds = estim.combine(Tmap_noCMB_100_masked_debeamed, unWISEmap, unwise_mask, ClTT_100, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100,6144), convert_K=True)
-_, _, outmap_143foregrounds = estim.combine(Tmap_noCMB_143_masked_debeamed, unWISEmap, unwise_mask, ClTT_143, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_143,6144), convert_K=False)
-_, _, outmap_217foregrounds = estim.combine(Tmap_noCMB_217_masked_debeamed, unWISEmap, unwise_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
-_, _, outmap_synchrotron_100 = estim.combine(Tmap_synchrotron_100, unWISEmap, unwise_mask, ClTT_100, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100,6144), convert_K=True)
-_, _, outmap_thermaldust_100 = estim.combine(Tmap_thermaldust_100, unWISEmap, unwise_mask, ClTT_100, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100,6144), convert_K=True)
-_, _, outmap_spinningdust_100 = estim.combine(Tmap_spinningdust_100, unWISEmap, unwise_mask, ClTT_100, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100,6144), convert_K=True)
-_, _, outmap_freefree_100 = estim.combine(Tmap_freefree_100, unWISEmap, unwise_mask, ClTT_100, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100,6144), convert_K=True)
-_, _, outmap_synchrotron_143 = estim.combine(Tmap_synchrotron_143, unWISEmap, unwise_mask, ClTT_143, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_143,6144), convert_K=False)
-_, _, outmap_thermaldust_143 = estim.combine(Tmap_thermaldust_143, unWISEmap, unwise_mask, ClTT_143, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_143,6144), convert_K=False)
-_, _, outmap_spinningdust_143 = estim.combine(Tmap_spinningdust_143, unWISEmap, unwise_mask, ClTT_143, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_143,6144), convert_K=False)
-_, _, outmap_freefree_143 = estim.combine(Tmap_freefree_143, unWISEmap, unwise_mask, ClTT_143, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_143,6144), convert_K=False)
-_, _, outmap_synchrotron_217 = estim.combine(Tmap_synchrotron_217, unWISEmap, unwise_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
-_, _, outmap_thermaldust_217 = estim.combine(Tmap_thermaldust_217, unWISEmap, unwise_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
-_, _, outmap_spinningdust_217 = estim.combine(Tmap_spinningdust_217, unWISEmap, unwise_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
-_, _, outmap_freefree_217 = estim.combine(Tmap_freefree_217, unWISEmap, unwise_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
+_, _, outmap_gaussreals = estim.combine(SMICAmap_gauss, unWISEmap, total_mask,  ClTT, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_SMICA,6144), convert_K=False)
+_, _, outmap_SMICA = estim.combine(SMICAmap_real, unWISEmap, total_mask, ClTT, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_SMICA,6144), convert_K=False)
+_, _, outmap_SMICApremask = estim.combine(SMICAmap_premask, unWISEmap, total_mask, ClTT_premask, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_SMICApremask,6144), convert_K=False)
+_, _, outmap_100 = estim.combine(T100map_real, unWISEmap, total_mask, ClTT_100, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100,6144), convert_K=True)
+_, _, outmap_143 = estim.combine(T143map_real, unWISEmap, total_mask, ClTT_143, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_143,6144), convert_K=False)
+_, _, outmap_217 = estim.combine(T217map_real, unWISEmap, total_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
+_, _, outmap_100foregrounds = estim.combine(Tmap_noCMB_100_masked_debeamed, unWISEmap, total_mask, ClTT_100, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100,6144), convert_K=True)
+_, _, outmap_143foregrounds = estim.combine(Tmap_noCMB_143_masked_debeamed, unWISEmap, total_mask, ClTT_143, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_143,6144), convert_K=False)
+_, _, outmap_217foregrounds = estim.combine(Tmap_noCMB_217_masked_debeamed, unWISEmap, total_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
+_, _, outmap_synchrotron_100 = estim.combine(Tmap_synchrotron_100, unWISEmap, total_mask, ClTT_100, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100,6144), convert_K=True)
+_, _, outmap_thermaldust_100 = estim.combine(Tmap_thermaldust_100, unWISEmap, total_mask, ClTT_100, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100,6144), convert_K=True)
+_, _, outmap_spinningdust_100 = estim.combine(Tmap_spinningdust_100, unWISEmap, total_mask, ClTT_100, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100,6144), convert_K=True)
+_, _, outmap_freefree_100 = estim.combine(Tmap_freefree_100, unWISEmap, total_mask, ClTT_100, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100,6144), convert_K=True)
+_, _, outmap_synchrotron_143 = estim.combine(Tmap_synchrotron_143, unWISEmap, total_mask, ClTT_143, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_143,6144), convert_K=False)
+_, _, outmap_thermaldust_143 = estim.combine(Tmap_thermaldust_143, unWISEmap, total_mask, ClTT_143, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_143,6144), convert_K=False)
+_, _, outmap_spinningdust_143 = estim.combine(Tmap_spinningdust_143, unWISEmap, total_mask, ClTT_143, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_143,6144), convert_K=False)
+_, _, outmap_freefree_143 = estim.combine(Tmap_freefree_143, unWISEmap, total_mask, ClTT_143, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_143,6144), convert_K=False)
+_, _, outmap_synchrotron_217 = estim.combine(Tmap_synchrotron_217, unWISEmap, total_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
+_, _, outmap_thermaldust_217 = estim.combine(Tmap_thermaldust_217, unWISEmap, total_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
+_, _, outmap_spinningdust_217 = estim.combine(Tmap_spinningdust_217, unWISEmap, total_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
+_, _, outmap_freefree_217 = estim.combine(Tmap_freefree_217, unWISEmap, total_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
 _, _, outmap_100_hugemask = estim.combine(Tmap_100_hugemasked_debeamed, unWISEmap, hugemask_unwise, ClTT_100hugemask, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100hugemask,6144), convert_K=True)
 _, _, outmap_100foregrounds_hugemask = estim.combine(Tmap_noCMB_100_hugemasked_debeamed, unWISEmap, hugemask_unwise, ClTT_100hugemask, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100hugemask,6144), convert_K=True)
 _, _, outmap_synchrotron_100hugemask = estim.combine(Tmap_synchrotron_100hugemask, unWISEmap, hugemask_unwise, ClTT_100hugemask, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100hugemask,6144), convert_K=True)
@@ -366,11 +371,11 @@ lowpass_100hugemask = lowpass(outmap_100foregrounds_hugemask)
 lowpass_143hugemask = lowpass(outmap_143foregrounds_hugemask)
 lowpass_217hugemask = lowpass(outmap_217foregrounds_hugemask)
 # Compute 1-pt statistics
-n, bins   = np.histogram(lowpass_output[np.where(unwise_mask!=0)], bins=50)
-ngauss, _ = np.histogram(lowpass_gauss[np.where(unwise_mask!=0)],  bins=bins)
-n100, _ = np.histogram(lowpass_100[np.where(unwise_mask!=0)], bins=bins)
-n143, _ = np.histogram(lowpass_143[np.where(unwise_mask!=0)], bins=bins)
-n217, _ = np.histogram(lowpass_217[np.where(unwise_mask!=0)], bins=bins)
+n, bins   = np.histogram(lowpass_output[np.where(total_mask!=0)], bins=50)
+ngauss, _ = np.histogram(lowpass_gauss[np.where(total_mask!=0)],  bins=bins)
+n100, _ = np.histogram(lowpass_100[np.where(total_mask!=0)], bins=bins)
+n143, _ = np.histogram(lowpass_143[np.where(total_mask!=0)], bins=bins)
+n217, _ = np.histogram(lowpass_217[np.where(total_mask!=0)], bins=bins)
 n_hugemask, bins_hugemask   = np.histogram(lowpass_output_hugemask[np.where(hugemask_unwise!=0)], bins=np.linspace(-1000,1000,250)/299792.458)
 n100huge, _ = np.histogram(lowpass_100hugemask[np.where(hugemask_unwise!=0)], bins=bins_hugemask)
 n143huge, _ = np.histogram(lowpass_143hugemask[np.where(hugemask_unwise!=0)], bins=bins_hugemask)
@@ -658,7 +663,7 @@ hp.mollview(unWISEmap,title='unWISE blue sample',max=20)
 plt.savefig(outdir+'unWISE input')
 
 plt.figure()
-hp.mollview(unwise_mask,title='',cbar=False,cmap='autumn',bgcolor='#262628')
+hp.mollview(total_mask,title='',cbar=False,cmap='autumn',bgcolor='#262628')
 plt.savefig(outdir+'Mask input')
 
 
@@ -736,15 +741,15 @@ plt.savefig(outdir+'bluestar')
 hp.mollview(weights_w2, title='W2 weights')
 plt.savefig(outdir+'W2')
 
-hp.mollview(unWISEmap*unwise_mask,title='unweighted counts map')
+hp.mollview(unWISEmap*total_mask,title='unweighted counts map')
 plt.savefig(outdir+'unWISE_unweighted')
-hp.mollview(unWISEmap*unwise_mask*weights_bluestar*weights_w2, title='weighted counts map')
+hp.mollview(unWISEmap*total_mask*weights_bluestar*weights_w2, title='weighted counts map')
 plt.savefig(outdir+'unWISE_weighted')
 
 
 
-_, _, outmap_217_weighted = estim.combine(T217map_real, unWISEmap*weights_bluestar*weights_w2, unwise_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
-_, _, outmap_SMICA_unwise_weighted = estim.combine(SMICAmap_real, unWISEmap*weights_bluestar*weights_w2, unwise_mask, ClTT, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_SMICA,6144), convert_K=False)
+_, _, outmap_217_weighted = estim.combine(T217map_real, unWISEmap*weights_bluestar*weights_w2, total_mask, ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), convert_K=False)
+_, _, outmap_SMICA_unwise_weighted = estim.combine(SMICAmap_real, unWISEmap*weights_bluestar*weights_w2, total_mask, ClTT, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_SMICA,6144), convert_K=False)
 
 recon_Cls_SMICA_unwise_weighted = hp.anafast(outmap_SMICA_unwise_weighted)
 recon_Cls_217_weighted = hp.anafast(outmap_217_weighted)
@@ -794,34 +799,92 @@ plt.savefig(outdir+'signal_noise_gauss_weighted.png')
 
 
 
-
 ####
 # Test to see what Gaussian reconstruction + signal V realization looks like
-if not os.path.exists("data/gauss_reals/noise_plus_velocity.npz"):
-	print('Computing velocity + noise for dndz reals')
+if not os.path.exists("data/gauss_reals/noise_plus_velocity_full.npz"):
+	print('Computing velocity + noise for dndz reals')	
+	draw_Cl_SMICA = hp.anafast(SMICAinp* cltt_measure_mask, lmax=spectra_lmax) / fsky_cltt
+	draw_Cl_T100  = hp.anafast(T100inp * cltt_measure_mask, lmax=spectra_lmax) / fsky_cltt
+	draw_Cl_T143  = hp.anafast(T143inp * cltt_measure_mask, lmax=spectra_lmax) / fsky_cltt
+	draw_Cl_T217  = hp.anafast(T217inp * cltt_measure_mask, lmax=spectra_lmax) / fsky_cltt
+	draw_Cl_T217huge = hp.anafast(T217inp * hugemask_unwise, lmax=spectra_lmax) / fsky_huge
+	unWISEmap_alms = hp.map2alm(unWISEmap, lmax=4000)
 	Cltaug_at_zbar_mm_me = interp1d(fullspectrum_ls, (Pmms[zbar_index,:] * galaxy_window_binned * taud1_window   / chibar**2) * csm.bin_width * ngbar, bounds_error=False, fill_value='extrapolate')(np.arange(6144))
-	noise_SMICA_mm_me = estim.Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=1, cltt=ClTT.copy(), clgg_binned=csm.Clgg[0,0,:].copy(), cltaudg_binned=Cltaug_at_zbar_mm_me.copy())
 	clv_windowed_interp_mm_me = interp1d(velocity_compute_ells,clv_windowed_mm_me,fill_value=0.,bounds_error=False)(np.arange(6144))
-	for big_i in np.arange(7,10):
+	noise_SMICA_mm_me = estim.Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=1, cltt=ClTT.copy(), clgg_binned=csm.Clgg[0,0,:].copy(), cltaudg_binned=Cltaug_at_zbar_mm_me.copy())
+	noise_T100_mm_me = estim.Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=1, cltt=ClTT_100.copy(), clgg_binned=csm.Clgg[0,0,:].copy(), cltaudg_binned=Cltaug_at_zbar_mm_me.copy())
+	noise_T143_mm_me = estim.Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=1, cltt=ClTT_143.copy(), clgg_binned=csm.Clgg[0,0,:].copy(), cltaudg_binned=Cltaug_at_zbar_mm_me.copy())
+	noise_T217_mm_me = estim.Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=1, cltt=ClTT_217.copy(), clgg_binned=csm.Clgg[0,0,:].copy(), cltaudg_binned=Cltaug_at_zbar_mm_me.copy())
+	noise_T217huge_mm_me = estim.Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=1, cltt=ClTT_217hugemask.copy(), clgg_binned=csm.Clgg[0,0,:].copy(), cltaudg_binned=Cltaug_at_zbar_mm_me.copy())	
+	for big_i in np.arange(1):
 		velocity_noise_Cls = []
+		velocity_noise_T100_Cls = []
+		velocity_noise_T143_Cls = []
+		velocity_noise_T217_Cls = []
+		velocity_noise_T217huge_Cls = []
 		velocity_noise_Cls_mm_me = []
+		velocity_noise_T100_Cls_mm_me = []
+		velocity_noise_T143_Cls_mm_me = []
+		velocity_noise_T217_Cls_mm_me = []
+		velocity_noise_T217huge_Cls_mm_me = []
 		for i in np.arange(100):
-			print('big_i = %d, i=%d'%(big_i, i))
-			SMICA_gauss_realization = hp.alm2map(hp.almxfl(hp.map2alm(hp.synfast(hp.anafast(SMICAinp*cltt_measure_mask)/fsky_cltt, 2048)), 1/SMICAbeam), 2048)
-			_, _, outmap_gauss_realization = estim.combine(SMICA_gauss_realization, unWISEmap, unwise_mask,  ClTT, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_SMICA,6144), convert_K=False)
-			_, _, outmap_gauss_realization_mm_me = estim.combine(SMICA_gauss_realization, unWISEmap, unwise_mask,  ClTT, csm.Clgg[0,0,:], Cltaug_at_zbar_mm_me.copy(), np.repeat(noise_SMICA_mm_me,6144), convert_K=False)
+			print('big_i = %d, i=%d'%(big_i, i), end='   ')
+			SMICA_gauss_realization = hp.almxfl(hp.synalm(draw_Cl_SMICA, lmax=spectra_lmax), 1/SMICAbeam[:spectra_lmax+1])
+			T100_gauss_realization = hp.almxfl(hp.synalm(draw_Cl_T100, lmax=spectra_lmax), 1/T100beam[:spectra_lmax+1])
+			T143_gauss_realization = hp.almxfl(hp.synalm(draw_Cl_T143, lmax=spectra_lmax), 1/T143beam[:spectra_lmax+1])
+			T217_gauss_realization = hp.almxfl(hp.synalm(draw_Cl_T217, lmax=spectra_lmax), 1/T217beam[:spectra_lmax+1])
+			T217_huge_gauss_realization = hp.almxfl(hp.synalm(draw_Cl_T217huge, lmax=spectra_lmax), 1/T217beam[:spectra_lmax+1])
+			print('performing reconstructions for P_me', end='   ')
+			_, _, outmap_gauss_realization = estim.combine_alm(SMICA_gauss_realization, unWISEmap_alms, total_mask,  ClTT, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_SMICA,6144), lmax=spectra_lmax, convert_K=False)
+			_, _, outmap_T100_gauss_realization = estim.combine_alm(T100_gauss_realization, unWISEmap_alms, total_mask,  ClTT_100, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_100,6144), lmax=spectra_lmax, convert_K=True)
+			_, _, outmap_T143_gauss_realization = estim.combine_alm(T143_gauss_realization, unWISEmap_alms, total_mask,  ClTT_143, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_143,6144), lmax=spectra_lmax, convert_K=False)
+			_, _, outmap_T217_gauss_realization = estim.combine_alm(T217_gauss_realization, unWISEmap_alms, total_mask,  ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217,6144), lmax=spectra_lmax, convert_K=False)
+			_, _, outmap_T217huge_gauss_realization = estim.combine_alm(T217_huge_gauss_realization, unWISEmap_alms, hugemask_unwise,  ClTT_217hugemask, csm.Clgg[0,0,:], Cltaug_at_zbar.copy(), np.repeat(noise_217hugemask,6144), lmax=spectra_lmax, convert_K=False)
+			print('performing reconstructions for P_mm', end='   ')
+			_, _, outmap_gauss_realization_mm_me = estim.combine_alm(SMICA_gauss_realization, unWISEmap_alms, total_mask,  ClTT, csm.Clgg[0,0,:], Cltaug_at_zbar_mm_me.copy(), np.repeat(noise_SMICA_mm_me,6144), lmax=spectra_lmax, convert_K=False)
+			_, _, outmap_T100_gauss_realization_mm_me = estim.combine_alm(T100_gauss_realization, unWISEmap_alms, total_mask,  ClTT_100, csm.Clgg[0,0,:], Cltaug_at_zbar_mm_me.copy(), np.repeat(noise_T100_mm_me,6144), lmax=spectra_lmax, convert_K=True)
+			_, _, outmap_T143_gauss_realization_mm_me = estim.combine_alm(T143_gauss_realization, unWISEmap_alms, total_mask,  ClTT_143, csm.Clgg[0,0,:], Cltaug_at_zbar_mm_me.copy(), np.repeat(noise_T143_mm_me,6144), lmax=spectra_lmax, convert_K=False)
+			_, _, outmap_T217_gauss_realization_mm_me = estim.combine_alm(T217_gauss_realization, unWISEmap_alms, total_mask,  ClTT_217, csm.Clgg[0,0,:], Cltaug_at_zbar_mm_me.copy(), np.repeat(noise_T217_mm_me,6144), lmax=spectra_lmax, convert_K=False)
+			_, _, outmap_T217huge_gauss_realization_mm_me = estim.combine_alm(T217_huge_gauss_realization, unWISEmap_alms, hugemask_unwise,  ClTT_217hugemask, csm.Clgg[0,0,:], Cltaug_at_zbar_mm_me.copy(), np.repeat(noise_T217huge_mm_me,6144), lmax=spectra_lmax, convert_K=False)
+			print('constructing signal+noise maps and Cls')
 			v_realization = hp.synfast(clv_windowed_interp, 2048)
 			v_realization_mm_me = hp.synfast(clv_windowed_interp_mm_me, 2048)
-			constructed_signalmap = v_realization*unwise_mask + outmap_gauss_realization
-			constructed_signalmap_mm_me = v_realization_mm_me*unwise_mask + outmap_gauss_realization_mm_me
-			velocity_noise_Cls.append(hp.anafast(constructed_signalmap)/fsky)
-			velocity_noise_Cls_mm_me.append(hp.anafast(constructed_signalmap_mm_me)/fsky)
+			constructed_signalmap = v_realization*total_mask + outmap_gauss_realization
+			constructed_signalmap_T100 = v_realization*total_mask + outmap_T100_gauss_realization
+			constructed_signalmap_T143 = v_realization*total_mask + outmap_T143_gauss_realization
+			constructed_signalmap_T217 = v_realization*total_mask + outmap_T217_gauss_realization
+			constructed_signalmap_T217huge = v_realization*total_mask + outmap_T217huge_gauss_realization
+			constructed_signalmap_mm_me = v_realization_mm_me*total_mask + outmap_gauss_realization_mm_me
+			constructed_signalmap_T100_mm_me = v_realization_mm_me*total_mask + outmap_T100_gauss_realization_mm_me
+			constructed_signalmap_T143_mm_me = v_realization_mm_me*total_mask + outmap_T143_gauss_realization_mm_me
+			constructed_signalmap_T217_mm_me = v_realization_mm_me*total_mask + outmap_T217_gauss_realization_mm_me
+			constructed_signalmap_T217huge_mm_me = v_realization_mm_me*total_mask + outmap_T217huge_gauss_realization_mm_me
+			velocity_noise_Cls.append(hp.anafast(constructed_signalmap, lmax=100)/fsky)
+			velocity_noise_T100_Cls.append(hp.anafast(constructed_signalmap_T100, lmax=100)/fsky)
+			velocity_noise_T143_Cls.append(hp.anafast(constructed_signalmap_T143, lmax=100)/fsky)
+			velocity_noise_T217_Cls.append(hp.anafast(constructed_signalmap_T217, lmax=100)/fsky)
+			velocity_noise_T217huge_Cls.append(hp.anafast(constructed_signalmap_T217huge, lmax=100)/fsky_huge)
+			velocity_noise_Cls_mm_me.append(hp.anafast(constructed_signalmap_mm_me, lmax=100)/fsky)
+			velocity_noise_T100_Cls_mm_me.append(hp.anafast(constructed_signalmap_T100_mm_me, lmax=100)/fsky)
+			velocity_noise_T143_Cls_mm_me.append(hp.anafast(constructed_signalmap_T143_mm_me, lmax=100)/fsky)
+			velocity_noise_T217_Cls_mm_me.append(hp.anafast(constructed_signalmap_T217_mm_me, lmax=100)/fsky)
+			velocity_noise_T217huge_Cls_mm_me.append(hp.anafast(constructed_signalmap_T217huge_mm_me, lmax=100)/fsky_huge)
 		velocity_noise_Cls = np.array(velocity_noise_Cls)
 		velocity_noise_Cls_mm_me = np.array(velocity_noise_Cls_mm_me)
-		np.savez("data/gauss_reals/noise_plus_velocity_%d-%d.npz"%(big_i*100,(big_i+1)*100-1), v_plus_n=velocity_noise_Cls,v_mm_me_plus_n_mm_me=velocity_noise_Cls_mm_me)
+		np.savez("data/gauss_reals/noise_plus_velocity_full_%d-%d.npz"%(big_i*100,(big_i+1)*100-1),
+			v_plus_n=velocity_noise_Cls,v_mm_me_plus_n_mm_me=velocity_noise_Cls_mm_me,
+			v_plus_n_100=velocity_noise_T100_Cls,     v_mm_me_plus_n_mm_me_100=velocity_noise_T100_Cls_mm_me,
+			v_plus_n_143=velocity_noise_T143_Cls,     v_mm_me_plus_n_mm_me_143=velocity_noise_T143_Cls_mm_me,
+			v_plus_n_217=velocity_noise_T217_Cls,     v_mm_me_plus_n_mm_me_217=velocity_noise_T217_Cls_mm_me,
+			v_plus_n_217huge=velocity_noise_T217huge_Cls, v_mm_me_plus_n_mm_me_217huge=velocity_noise_T217huge_Cls_mm_me)
 else:
-	velocity_noise_Cls = np.load("data/gauss_reals/noise_plus_velocity.npz")['v_plus_n']
-	velocity_noise_Cls_mm_me = np.load("data/gauss_reals/noise_plus_velocity.npz")['v_mm_me_plus_n_mm_me']
+	filelist = [f for f in os.listdir('data/gauss_reals') if f.startswith('noise_plus_velocity') and f.endswith('.npz') and 'full' not in f]
+	velocity_noise_Cls = np.zeros((len(filelist)*100, 6143))
+	velocity_noise_Cls_mm_me = np.zeros((len(filelist)*100, 6143))
+	for big_i in np.arange(len(filelist)):
+		velocity_noise_Cls[big_i*100:(big_i+1)*100,:] = np.load('data/gauss_reals/'+filelist[big_i])['v_plus_n'][:,1:]
+		velocity_noise_Cls_mm_me[big_i*100:(big_i+1)*100,:] = np.load('data/gauss_reals/'+filelist[big_i])['v_mm_me_plus_n_mm_me'][:,1:]
+
 
 
 plt.figure()
@@ -853,17 +916,17 @@ plt.savefig(outdir+'signal_noise_gauss_constructed.png')
 # Start writing: data sets, pipeline, stuff that's fixed. Put plots in the right sections and type up around them.
 # Map-level: reconstruction on full sky minus reconstruction on thermal dust - how close to CMB reconstruction?   -  not close at all
 # plt.figure()
-# hp.mollview(lowpass_output*unwise_mask,title='SMICA x unWISE')
+# hp.mollview(lowpass_output*total_mask,title='SMICA x unWISE')
 # plt.savefig(outdir+'SMICA_out')
 
 # plt.figure()
-# hp.mollview(lowpass(outmap_100 - outmap_thermaldust_100)*unwise_mask,title=r'$v_{\mathrm{100 GHz}}-v_{\mathrm{dust}}$')
+# hp.mollview(lowpass(outmap_100 - outmap_thermaldust_100)*total_mask,title=r'$v_{\mathrm{100 GHz}}-v_{\mathrm{dust}}$')
 # plt.savefig(outdir+'subtraction_100GHz')
 # plt.figure()
-# hp.mollview(lowpass(outmap_143 - outmap_thermaldust_143)*unwise_mask,title=r'$v_{\mathrm{143 GHz}}-v_{\mathrm{dust}}$')
+# hp.mollview(lowpass(outmap_143 - outmap_thermaldust_143)*total_mask,title=r'$v_{\mathrm{143 GHz}}-v_{\mathrm{dust}}$')
 # plt.savefig(outdir+'subtraction_143GHz')
 # plt.figure()
-# hp.mollview(lowpass(outmap_217 - outmap_thermaldust_217)*unwise_mask,title=r'$v_{\mathrm{217 GHz}}-v_{\mathrm{dust}}$')
+# hp.mollview(lowpass(outmap_217 - outmap_thermaldust_217)*total_mask,title=r'$v_{\mathrm{217 GHz}}-v_{\mathrm{dust}}$')
 # plt.savefig(outdir+'subtraction_217GHz')
 
 
@@ -887,7 +950,7 @@ plt.savefig(outdir+'signal_noise_gauss_constructed.png')
 # lssmap = hp.alm2map(lsslms,2048)
 # normprod_SMICA_unwise = bessel(bins,Tmap,lssmap*noise_SMICA) / (np.pi * np.std(Tmap) * np.std(lssmap*noise_SMICA))
 
-# narf,barf,_ = plt.hist(outmap_SMICA[np.where(unwise_mask!=0)],bins=10000)
+# narf,barf,_ = plt.hist(outmap_SMICA[np.where(total_mask!=0)],bins=10000)
 # klkfsf = bessel(barf,Tmap,lssmap* noise_SMICA) / (np.pi * np.std(Tmap) * np.std(lssmap* noise_SMICA))
 # plt.figure()
 # plt.plot(centres(barf)*299792.458, narf, label='Reconstruction')
@@ -899,11 +962,11 @@ plt.savefig(outdir+'signal_noise_gauss_constructed.png')
 # plt.xlim([-3e4,3e4])
 # plt.savefig(outdir+'1pt')
 
-# n_Tmap, bins_Tmap, _ = plt.hist(Tmap[np.where(unwise_mask!=0)],bins=np.linspace(-3*np.std(Tmap),3*np.std(Tmap),1000))
-# n_lssmap, bins_lssmap, _ = plt.hist(lssmap[np.where(unwise_mask!=0)],bins=np.linspace(-3*np.std(lssmap),3*np.std(lssmap),1000))
+# n_Tmap, bins_Tmap, _ = plt.hist(Tmap[np.where(total_mask!=0)],bins=np.linspace(-3*np.std(Tmap),3*np.std(Tmap),1000))
+# n_lssmap, bins_lssmap, _ = plt.hist(lssmap[np.where(total_mask!=0)],bins=np.linspace(-3*np.std(lssmap),3*np.std(lssmap),1000))
 
-# popt_SMICA, pcov_SMICA = curve_fit(gaussian, centres(bins_Tmap), n_Tmap, p0=[np.max(n_Tmap), 0., np.std(Tmap[np.where(unwise_mask!=0)])])
-# popt_unWISE, pcov_unWISE = curve_fit(gaussian, centres(bins_lssmap), n_lssmap, p0=[np.max(n_lssmap), 0., np.std(lssmap[np.where(unwise_mask!=0)])])
+# popt_SMICA, pcov_SMICA = curve_fit(gaussian, centres(bins_Tmap), n_Tmap, p0=[np.max(n_Tmap), 0., np.std(Tmap[np.where(total_mask!=0)])])
+# popt_unWISE, pcov_unWISE = curve_fit(gaussian, centres(bins_lssmap), n_lssmap, p0=[np.max(n_lssmap), 0., np.std(lssmap[np.where(total_mask!=0)])])
 
 # fig, (ax1, ax2) = plt.subplots(1,2,figsize=(10,4))
 # ax1.plot(centres(bins_Tmap),n_Tmap, label='Filtered SMICA')
@@ -1008,9 +1071,9 @@ plt.savefig(outdir+'signal_noise_gauss_constructed.png')
 
 # import pymaster as nmt
 
-# unwise_mask_apodized_C1 = nmt.mask_apodization(unwise_mask, aposize=5/60, apotype='C1')
-# unwise_mask_apodized_C2 = nmt.mask_apodization(unwise_mask, aposize=5/60, apotype='C2')
-# unwise_mask_apodized_smooth = nmt.mask_apodization(unwise_mask, aposize=5/60, apotype='Smooth')
+# unwise_mask_apodized_C1 = nmt.mask_apodization(total_mask, aposize=5/60, apotype='C1')
+# unwise_mask_apodized_C2 = nmt.mask_apodization(total_mask, aposize=5/60, apotype='C2')
+# unwise_mask_apodized_smooth = nmt.mask_apodization(total_mask, aposize=5/60, apotype='Smooth')
 
 # f_C1 = nmt.NmtField(unwise_mask_apodized_C1, [outmap_SMICA])
 # f_C2 = nmt.NmtField(unwise_mask_apodized_C2, [outmap_SMICA])
@@ -1019,7 +1082,7 @@ plt.savefig(outdir+'signal_noise_gauss_constructed.png')
 # f_SMICAinp = nmt.NmtField(unwise_mask_apodized_C1, [SMICAinp])
 
 # smicafull_cls = hp.anafast(SMICAinp)
-# smicamask_cls = hp.anafast(SMICAinp * unwise_mask)
+# smicamask_cls = hp.anafast(SMICAinp * total_mask)
 
 
 
