@@ -315,13 +315,6 @@ maplist.Cls['SMICA'] = maplist.alm2cl(maplist.mask_and_debeam(maplist.input_SMIC
 maplist.Cls['COMMANDER'] = maplist.alm2cl(maplist.mask_and_debeam(maplist.input_COMMANDER, maplist.mask_planck, maplist.SMICAbeam), maplist.fsky_planck)
 maplist.Cls['unWISE'] = hp.alm2cl(maplist.processed_alms['unWISE'])
 
-print('    Computing windowed velocity')
-clv_windowed, clv_windowed_mm = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['SMICA'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
-clv_windowed_100GHz, clv_windowed_mm_100GHz = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['100GHz'] / pars.TCMB**2, clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
-clv_windowed_143GHz, clv_windowed_mm_143GHz = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['143GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
-clv_windowed_217GHz, clv_windowed_mm_217GHz = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['217GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
-clv_windowed_353GHz, clv_windowed_mm_353GHz = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['353GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
-
 print('    Computing fiducial reconstructions')
 noises['SMICA'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['SMICA'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial)
 noises['COMMANDER'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['COMMANDER'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial)
@@ -353,12 +346,72 @@ for key in map_container:
 maplist.stored_maps['recon_SMICA'] = maplist.lowpass_filter(reconstructions['SMICA'], lmax=25)
 maplist.stored_maps['recon_COMMANDER'] = maplist.lowpass_filter(reconstructions['COMMANDER'], lmax=25)
 
-### Plots
+print('    Computing windowed velocity')
+clv_windowed, clv_windowed_mm = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['SMICA'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+clv_windowed_100GHz, clv_windowed_mm_100GHz = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['100GHz'] / pars.TCMB**2, clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+clv_windowed_143GHz, clv_windowed_mm_143GHz = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['143GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+clv_windowed_217GHz, clv_windowed_mm_217GHz = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['217GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+clv_windowed_353GHz, clv_windowed_mm_353GHz = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['353GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+
+print('Post-processing: computing statistics and lowpass-filtered statistics')
+# Common functions
+centres = lambda BIN : (BIN[:-1]+BIN[1:]) / 2
+bessel = lambda bins, Tmap, lssmap : kn(0, np.abs(centres(bins)) / (np.std(Tmap)*np.std(lssmap)))
+normal_product = lambda bins, Tmap, lssmap : bessel(bins,Tmap,lssmap) / (np.pi * np.std(Tmap) * np.std(lssmap))
+nbin_hist = 1000000
+bins_freqhist = np.linspace(-1000,3000,np.min([nbin_hist, 5000])) / 299792.458
+bins_353hist = np.linspace(-500,6100,np.min([nbin_hist, 5000])) / 299792.458
+# Recon 1pt plot: reconstruction vs normal product distribution
+n_out_normprod_COMMANDER, bins_out_normprod_COMMANDER = np.histogram(reconstructions['COMMANDER'][np.where(maplist.mask!=0)], bins=nbin_hist)
+normprod_COMMANDERmap_filtered = hp.alm2map(hp.almxfl(maplist.processed_alms['COMMANDER'], np.divide(np.ones_like(maplist.Cls['COMMANDER']), maplist.Cls['COMMANDER'], out=np.zeros_like(maplist.Cls['COMMANDER']), where=np.arange(cltaug_fiducial.size)>=100)), lmax=maplist.lmax, nside=maplist.nside)
+normprod_lssmap_filtered = hp.alm2map(hp.almxfl(maplist.processed_alms['unWISE'], np.divide(cltaug_fiducial, maplist.Cls['unWISE'], out=np.zeros_like(cltaug_fiducial), where=np.arange(cltaug_fiducial.size)>=100)), lmax=maplist.lmax, nside=maplist.nside)
+normprod_std_COMMANDERmap_filtered = np.std(normprod_COMMANDERmap_filtered[np.where(maplist.mask!=0)])
+normprod_std_lssmap_filtered = np.std(normprod_lssmap_filtered[np.where(maplist.mask!=0)])
+expect_normprod_COMMANDER = normal_product(bins_out_normprod_COMMANDER,normprod_COMMANDERmap_filtered[np.where(maplist.mask!=0)]*noises['COMMANDER'],normprod_lssmap_filtered[np.where(maplist.mask!=0)])
+
+# 1pt frequency map plots: lowpass filters and histograms
+maplist.stored_maps['recon_100GHz'] = maplist.lowpass_filter(reconstructions['100GHz'], lmax=25)
+maplist.stored_maps['recon_143GHz'] = maplist.lowpass_filter(reconstructions['143GHz'], lmax=25)
+maplist.stored_maps['recon_217GHz'] = maplist.lowpass_filter(reconstructions['217GHz'], lmax=25)
+maplist.stored_maps['recon_217GHz_CIBmask'] = maplist.lowpass_filter(reconstructions['217GHz_CIBmask'], lmax=25)
+maplist.stored_maps['recon_353GHz_CIBmask'] = maplist.lowpass_filter(reconstructions['353GHz_CIBmask'], lmax=25)
+maplist.stored_maps['recon_353GHz_CIBmask'] = maplist.lowpass_filter(reconstructions['353GHz_CIBmask'], lmax=25)
+maplist.stored_maps['recon_353GHz_thermaldust_CIBmask'] = maplist.lowpass_filter(reconstructions['353GHz_thermaldust_CIBmask'], lmax=25)
+maplist.stored_maps['recon_353GHz_CIB_CIBmask'] = maplist.lowpass_filter(reconstructions['353GHz_CIB_CIBmask'], lmax=25)
+maplist.stored_maps['recon_353GHz_noSMICA_CIBmask'] = maplist.lowpass_filter(reconstructions['353GHz_noSMICA_CIBmask'], lmax=25)
+maplist.stored_maps['recon_353GHz_noCOMMANDER_CIBmask'] = maplist.lowpass_filter(reconstructions['353GHz_noCOMMANDER_CIBmask'], lmax=25)
+
+# With binning consistent with the multi-frequency 1-pt plot
+n_out_100, _ = np.histogram(maplist.stored_maps['recon_100GHz'][np.where(maplist.mask!=0)], bins=bins_freqhist)
+n_out_143, _ = np.histogram(maplist.stored_maps['recon_143GHz'][np.where(maplist.mask!=0)], bins=bins_freqhist)
+n_out_217, _ = np.histogram(maplist.stored_maps['recon_217GHz'][np.where(maplist.mask!=0)], bins=bins_freqhist)
+n_out_217_huge, _ = np.histogram(maplist.stored_maps['recon_217GHz_CIBmask'][np.where(maplist.mask_huge!=0)], bins=bins_freqhist)
+n_out_353_huge, _ = np.histogram(maplist.stored_maps['recon_353GHz_CIBmask'][np.where(maplist.mask_huge!=0)], bins=bins_freqhist)
+# With binning for the 353 GHz 1-pt plot
+n_out_353_353hist, _ = np.histogram(maplist.stored_maps['recon_353GHz_CIBmask'][np.where(maplist.mask_huge!=0)], bins=bins_353hist)
+n_out_353_thermaldust, _ = np.histogram(maplist.stored_maps['recon_353GHz_thermaldust_CIBmask'][np.where(maplist.mask_huge!=0)], bins=bins_353hist)
+n_out_353_CIB, _ = np.histogram(maplist.stored_maps['recon_353GHz_CIB_CIBmask'][np.where(maplist.mask_huge!=0)], bins=bins_353hist)
+n_out_353_noSMICA, _ = np.histogram(maplist.stored_maps['recon_353GHz_noSMICA_CIBmask'][np.where(maplist.mask_huge!=0)], bins=bins_353hist)
+n_out_353_noCOMMANDER, _ = np.histogram(maplist.stored_maps['recon_353GHz_noCOMMANDER_CIBmask'][np.where(maplist.mask_huge!=0)], bins=bins_353hist)
+
+# P_me approximation plot
+Pme_at_ells = np.zeros((chis.size, ls.size))
+slice_indices = np.arange(chis.size)[10:][::20]
+for l, ell in enumerate(ls):
+	Pmms[:,l] = np.diagonal(np.flip(Pmm_full.P(results.redshift_at_comoving_radial_distance(chis), (ell+0.5)/chis[::-1], grid=True), axis=1))
+	m_to_e = np.diagonal(np.flip(bias_e2(results.redshift_at_comoving_radial_distance(chis), (ell+0.5)/chis[::-1]), axis=1))
+	Pme_at_ells[:,l] = Pmms[:,l] * m_to_e
+
+
+### Plotting
+# Common functions
 bandpowers = lambda spectrum : np.array([spectrum[1+(5*i):1+(5*(i+1))].mean() for i in np.arange(spectrum.size//5)])
+pixel_scaling_masked = lambda distribution, FSKY : (12*2048**2) * FSKY * (distribution / simps(distribution))
+c = mpl.colors.ListedColormap(['darkred', 'gold'])
 x_ells = bandpowers(np.arange(recon_lmax+1))
 linecolors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
-## Needs to be cut in outside figure, hp.mollview is uncooperative with matplotlib formatting for whitespace.
+## Fiducial reconstruction maps: needs to be cropped by 3rd party program, hp.mollview is uncooperative with matplotlib formatting for whitespace.
 fig, (ax1, ax2) = plt.subplots(2,1,figsize=(10,15))
 plt.axes(ax1)
 hp.mollview(maplist.stored_maps['recon_SMICA']*maplist.mask, title=r'SMICA x unWISE Reconstruction $\left(\ell_{\mathrm{max}}\leq 25\right)$', unit=r'$\frac{v}{c}$', hold=True)
@@ -367,6 +420,7 @@ hp.mollview(maplist.stored_maps['recon_COMMANDER']*maplist.mask, title=r'COMMAND
 plt.tight_layout()
 plt.savefig(outdir+'recon_outputs')
 
+# SNR plot, main result for fiducial reconstructions
 plt.figure()
 plt.semilogy(x_ells, bandpowers(recon_Cls['SMICA']), label='SMICA x unWISE Reconstruction', ls='None', marker='x', zorder=100,color=linecolors[0])
 plt.semilogy(x_ells, bandpowers(recon_Cls['COMMANDER']),label='COMMANDER x unWISE Reconstruction', ls='None', marker='x', zorder=100,color=linecolors[3])
@@ -380,7 +434,7 @@ plt.title('Planck x unWISE Reconstruction')
 plt.tight_layout()
 plt.savefig(outdir+'signal_noise_gauss.png')
 
-
+# 2pt frequency statistics for 100, 143, 217 GHz with fiducial mask
 fig, (ax100, ax143, ax217) = plt.subplots(1,3,figsize=(18,6))
 for freq, ax in zip([100, 143, 217], [ax100, ax143, ax217]):
 	Tcorr = pars.TCMB**2 if freq == 100 else 1.
@@ -395,11 +449,10 @@ for freq, ax in zip([100, 143, 217], [ax100, ax143, ax217]):
 	ax.legend()
 	ax.set_xlabel(r'$\ell$')
 	ax.set_ylabel(r'$\frac{v^2}{c^2}$',rotation=0,fontsize=16)
-
 plt.tight_layout()
 plt.savefig(outdir+'freq_recon_fiducialmask')
 
-
+# 2pt statistics at 217 GHz for the two different masks
 plt.figure()
 plt.semilogy(x_ells, bandpowers(recon_Cls['217GHz']), label='Fiducial mask', ls='None', marker='x', zorder=100, color=linecolors[0])
 plt.semilogy(x_ells, bandpowers(recon_Cls['217GHz_CIBmask']), label='Large mask', ls='None', marker='x', zorder=100, color=linecolors[2])
@@ -412,20 +465,7 @@ plt.title('Reconstructions at 217 GHz')
 plt.tight_layout()
 plt.savefig(outdir+'217_recon_masks')
 
-
-
-
-
-
-maplist.input_T353_thermaldust = fits.open('data/planck_data_testing/foregrounds/COM_SimMap_thermaldust-ffp10-skyinbands-353_2048_R3.00_full.fits')[1].data['TEMPERATURE'].flatten()  / 2.7255
-maplist.processed_alms['353GHz_thermaldust_CIBmask'] = maplist.mask_and_debeam(map_container['353GHz_thermaldust'], maplist.mask_huge, beam_container['353GHz_thermaldust'])
-key = '353GHz_thermaldust'
-maplist.Cls[key+'_CIBmask'] = maplist.alm2cl(maplist.processed_alms[key+'_CIBmask'], maplist.fsky_huge)
-master_cltt = maplist.Cls[key.split('_')[0]]  # Theory ClTT should be on the full frequency sky
-noises[key] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=master_cltt, clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial)
-reconstructions[key+'_CIBmask'] = combine_alm(maplist.processed_alms[key+'_CIBmask'], maplist.processed_alms['unWISE'], maplist.mask_huge, master_cltt, maplist.Cls['unWISE'], cltaug_fiducial, noises[key], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
-recon_Cls[key+'_CIBmask'] = maplist.alm2cl(hp.map2alm(reconstructions[key+'_CIBmask'], lmax=recon_lmax), maplist.fsky_huge)
-
+# 2pt statistics at 353 GHz for the different foregrounds
 plt.figure()
 plt.semilogy(x_ells, bandpowers(recon_Cls['353GHz_CIBmask']), label='353 GHz x unWISE', ls='None', marker='x', zorder=100, color=linecolors[0])
 plt.semilogy(x_ells, bandpowers(recon_Cls['353GHz_thermaldust_CIBmask']), label='thermal dust x unWISE', ls='None', marker='x', zorder=100, color=linecolors[2])
@@ -439,17 +479,12 @@ plt.title('Reconstructions at 353 GHz with large mask')
 plt.tight_layout()
 plt.savefig(outdir+'353_recon_masks')
 
-
-
-
-
-
+# dN/dz
 plt.figure()
 plt.plot(redshifts, dNdz_fiducial / simps(dNdz_fiducial), lw=2, label=r'Best-fit $\frac{d\mathrm{N}}{dz}$',zorder=200,color='red')
 plt.plot(redshifts, dNdz_realization[0,:] / simps(dNdz_realization[0,:]), lw=0.5, color='gray', alpha=0.75, label=r'Individual $\frac{d\mathrm{N}}{dz}$ realizations')
 for i in np.arange(1,100):
 	plt.plot(redshifts, dNdz_realization[i,:] / simps(dNdz_realization[i,:]), lw=0.5, color='gray', alpha=0.75)
-
 plt.title('unWISE redshift distribution')
 plt.xlabel(r'$z$')
 plt.xlim([redshifts.min(), redshifts.max()])
@@ -457,16 +492,15 @@ leg = plt.legend()
 for lh in leg.legendHandles[1:]:
 	lh.set_alpha(1.)
 	lh.set_linewidth(1.)
-
 plt.tight_layout()
 plt.savefig(outdir+'dndz')
 
+# Cltaug
 plt.figure()
 plt.semilogy(cltaug_fiducial, lw=2, color='red', zorder=200, label=r'$C_\ell^{\tau\mathrm{g}}$ for best-fit $\frac{d\mathrm{N}}{dz}$')
 plt.semilogy(cltaug_dndz[0,:], lw=0.5, color='gray', alpha=0.75, label=r'$C_\ell^{\tau\mathrm{g}}$ for $\frac{d\mathrm{N}}{dz}$ realizations')
 for i in np.arange(1,100):
 	plt.semilogy(cltaug_dndz[i,:], lw=0.5, color='gray', alpha=0.75)
-
 plt.title('unWISE blue modelled tau-galaxy cross-spectrum')
 plt.xlabel(r'$\ell$')
 plt.ylabel(r'$C_\ell^{\tau\mathrm{g}}$')
@@ -475,40 +509,20 @@ leg = plt.legend()
 for lh in leg.legendHandles[1:]:
 	lh.set_alpha(1.)
 	lh.set_linewidth(1.)
-
-#plt.gca().invert_yaxis()
-#plt.gca().set_yticks([1e-7,1e-8,1e-9,1e-10],labels=[r'$-10^{-7}$',r'$-10^{-8}$',r'$-10^{-9}$',r'$-10^{-10}$'])
 plt.tight_layout()
 plt.savefig(outdir+'cltaug')
 
-
-c = mpl.colors.ListedColormap(['darkred', 'gold'])
+# Fiducial mask map
 plt.figure()
 hp.mollview(maplist.mask, cmap=c, cbar=False, title=r'Fiducial Reconstruction Mask $\left(f_{\mathrm{sky}}=%.2f\right)$' % maplist.fsky)
 plt.savefig(outdir+'Mask input')
 
+# Large mask map
 plt.figure()
 hp.mollview(maplist.mask_huge, cmap=c, cbar=False, title=r'Large Reconstruction Mask $\left(f_{\mathrm{sky}}=%.2f\right)$' % maplist.fsky_huge)
 plt.savefig(outdir+'hugemask_unwise')
 
-
-
-centres = lambda BIN : (BIN[:-1]+BIN[1:]) / 2
-bessel = lambda bins, Tmap, lssmap : kn(0, np.abs(centres(bins)) / (np.std(Tmap)*np.std(lssmap)))
-normal_product = lambda bins, Tmap, lssmap : bessel(bins,Tmap,lssmap) / (np.pi * np.std(Tmap) * np.std(lssmap))
-pixel_scaling_masked = lambda distribution, FSKY : (12*2048**2) * FSKY * (distribution / simps(distribution))
-
-nbin_hist = 1000000
-n_out_normprod_COMMANDER, bins_out_normprod_COMMANDER = np.histogram(reconstructions['COMMANDER'][np.where(maplist.mask!=0)], bins=nbin_hist)
-
-normprod_COMMANDERmap_filtered = hp.alm2map(hp.almxfl(maplist.processed_alms['COMMANDER'], np.divide(np.ones_like(maplist.Cls['COMMANDER']), maplist.Cls['COMMANDER'], out=np.zeros_like(maplist.Cls['COMMANDER']), where=np.arange(cltaug_fiducial.size)>=100)), lmax=maplist.lmax, nside=maplist.nside)
-normprod_lssmap_filtered = hp.alm2map(hp.almxfl(maplist.processed_alms['unWISE'], np.divide(cltaug_fiducial, maplist.Cls['unWISE'], out=np.zeros_like(cltaug_fiducial), where=np.arange(cltaug_fiducial.size)>=100)), lmax=maplist.lmax, nside=maplist.nside)
-
-normprod_std_COMMANDERmap_filtered   = np.std(normprod_COMMANDERmap_filtered[np.where(maplist.mask!=0)])
-normprod_std_lssmap_filtered = np.std(normprod_lssmap_filtered[np.where(maplist.mask!=0)])
-
-expect_normprod_COMMANDER = normal_product(bins_out_normprod_COMMANDER,normprod_COMMANDERmap_filtered[np.where(maplist.mask!=0)]*noises['COMMANDER'],normprod_lssmap_filtered[np.where(maplist.mask!=0)])
-
+# 1pt statistics for the fiducial reconstruction
 plt.figure()
 plt.fill_between(centres(bins_out_normprod_COMMANDER), np.zeros(n_out_normprod_COMMANDER.size), pixel_scaling_masked(n_out_normprod_COMMANDER,maplist.fsky)/1e3, label='Velocity reconstruction (VR)')
 plt.plot(centres(bins_out_normprod_COMMANDER), pixel_scaling_masked(expect_normprod_COMMANDER, maplist.fsky)/1e3,color='k', ls='--',label='Normal product dist. (NPD)')
@@ -529,28 +543,13 @@ plt.legend()
 plt.tight_layout()
 plt.savefig(outdir+'recon_1pt')
 
-
-maplist.stored_maps['recon_100GHz'] = maplist.lowpass_filter(reconstructions['100GHz'], lmax=25)
-maplist.stored_maps['recon_143GHz'] = maplist.lowpass_filter(reconstructions['143GHz'], lmax=25)
-maplist.stored_maps['recon_217GHz'] = maplist.lowpass_filter(reconstructions['217GHz'], lmax=25)
-maplist.stored_maps['recon_217GHz_CIBmask'] = maplist.lowpass_filter(reconstructions['217GHz_CIBmask'], lmax=25)
-maplist.stored_maps['recon_353GHz_CIBmask'] = maplist.lowpass_filter(reconstructions['353GHz_CIBmask'], lmax=25)
-
-histbins = np.linspace(-1000,3000,np.min([nbin_hist, 5000])) / 299792.458
-
-n_out_100, _ = np.histogram(maplist.stored_maps['recon_100GHz'][np.where(maplist.mask!=0)], bins=histbins)
-n_out_143, _ = np.histogram(maplist.stored_maps['recon_143GHz'][np.where(maplist.mask!=0)], bins=histbins)
-n_out_217, _ = np.histogram(maplist.stored_maps['recon_217GHz'][np.where(maplist.mask!=0)], bins=histbins)
-n_out_217_huge, _ = np.histogram(maplist.stored_maps['recon_217GHz_CIBmask'][np.where(maplist.mask_huge!=0)], bins=histbins)
-n_out_353_huge, _ = np.histogram(maplist.stored_maps['recon_353GHz_CIBmask'][np.where(maplist.mask_huge!=0)], bins=histbins)
-
-
+# 1pt statistics across multiple frequencies and masks
 plt.figure()
-plt.plot(centres(histbins)*299792.458, n_out_100/simps(n_out_100), label='100 GHz')
-plt.plot(centres(histbins)*299792.458, n_out_143/simps(n_out_143), label='143 GHz')
-plt.plot(centres(histbins)*299792.458, n_out_217/simps(n_out_217), label='217 GHz (fiducial mask)')
-plt.plot(centres(histbins)*299792.458, n_out_217_huge/simps(n_out_217_huge), label='217 GHz (large mask)')
-plt.plot(centres(histbins)*299792.458, n_out_353_huge/simps(n_out_353_huge), label='353 GHz (large mask)')
+plt.plot(centres(bins_freqhist)*299792.458, n_out_100/simps(n_out_100), label='100 GHz')
+plt.plot(centres(bins_freqhist)*299792.458, n_out_143/simps(n_out_143), label='143 GHz')
+plt.plot(centres(bins_freqhist)*299792.458, n_out_217/simps(n_out_217), label='217 GHz (fiducial mask)')
+plt.plot(centres(bins_freqhist)*299792.458, n_out_217_huge/simps(n_out_217_huge), label='217 GHz (large mask)')
+plt.plot(centres(bins_freqhist)*299792.458, n_out_353_huge/simps(n_out_353_huge), label='353 GHz (large mask)')
 plt.xlabel('km/s')
 plt.ylabel(r'Normalized $\mathrm{N}_{\mathrm{pix}}$')
 plt.title('Frequency map reconstruction pixel values')
@@ -559,32 +558,33 @@ plt.legend()
 plt.tight_layout()
 plt.savefig(outdir+'1ptdrift')
 
+# 1pt statistics for 353 GHz for different foregrounds
+plt.figure()
+plt.plot(centres(bins_353hist)*299792.458, n_out_353_353hist/simps(n_out_353_353hist), label='353 GHz x unWISE')
+plt.plot(centres(bins_353hist)*299792.458, n_out_353_noSMICA/simps(n_out_353_noSMICA), label='353 GHz - SMICA x unWISE')
+plt.plot(centres(bins_353hist)*299792.458, n_out_353_noCOMMANDER/simps(n_out_353_noCOMMANDER), label='353 GHz - COMMANDER x unWISE')
+plt.plot(centres(bins_353hist)*299792.458, n_out_353_thermaldust/simps(n_out_353_thermaldust), label='Thermal dust x unWISE')
+plt.plot(centres(bins_353hist)*299792.458, n_out_353_CIB/simps(n_out_353_CIB), label='CIB x unWISE')
+plt.xlabel('km/s')
+plt.ylabel(r'Normalized $\mathrm{N}_{\mathrm{pix}}$')
+plt.title('353 GHz large-masked reconstruction pixel values   ')
+plt.xlim([bins_353hist.min()*299792.458,bins_353hist.max()*299792.458])
+plt.legend()
+plt.tight_layout()
+plt.savefig(outdir+'hist_353')
 
-Pme_at_ells = np.zeros((chis.size, ls.size))
-for l, ell in enumerate(ls):
-	Pmms[:,l] = np.diagonal(np.flip(Pmm_full.P(results.redshift_at_comoving_radial_distance(chis), (ell+0.5)/chis[::-1], grid=True), axis=1))
-	m_to_e = np.diagonal(np.flip(bias_e2(results.redshift_at_comoving_radial_distance(chis), (ell+0.5)/chis[::-1]), axis=1))
-	Pme_at_ells[:,l] = Pmms[:,l] * m_to_e
-
-
-
-slice_indices = np.arange(chis.size)[10:][::20]
-
+# P_me plot
 plt.figure()
 plt.semilogy(ls,Pme_at_ells[zbar_index,:],lw=2,c='k', ls='--', label=r'$z = \bar{z}$', zorder=100)
 for s, sliced in enumerate(slice_indices):
 	plt.semilogy(ls,Pme_at_ells[sliced,:], label=r'$z = %.1f$' % results.redshift_at_comoving_radial_distance(chis[sliced]))
-
 plt.xlabel(r'$\ell$')
 plt.ylabel(r'$P_{me}\left(\frac{\ell+\frac{1}{2}}{\chi},\chi\right)$')
 plt.title('Matter-electron power spectrum')
+plt.xlim([2,4000])
 plt.legend()
 plt.savefig(outdir+'Pme')
 
 
 
-
 print('\n\nCompleted successfully!\n\n')
-
-
-
