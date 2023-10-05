@@ -375,7 +375,6 @@ maplist.stored_maps['recon_143GHz'] = maplist.lowpass_filter(reconstructions['14
 maplist.stored_maps['recon_217GHz'] = maplist.lowpass_filter(reconstructions['217GHz'], lmax=25)
 maplist.stored_maps['recon_217GHz_CIBmask'] = maplist.lowpass_filter(reconstructions['217GHz_CIBmask'], lmax=25)
 maplist.stored_maps['recon_353GHz_CIBmask'] = maplist.lowpass_filter(reconstructions['353GHz_CIBmask'], lmax=25)
-maplist.stored_maps['recon_353GHz_CIBmask'] = maplist.lowpass_filter(reconstructions['353GHz_CIBmask'], lmax=25)
 maplist.stored_maps['recon_353GHz_thermaldust_CIBmask'] = maplist.lowpass_filter(reconstructions['353GHz_thermaldust_CIBmask'], lmax=25)
 maplist.stored_maps['recon_353GHz_CIB_CIBmask'] = maplist.lowpass_filter(reconstructions['353GHz_CIB_CIBmask'], lmax=25)
 maplist.stored_maps['recon_353GHz_noSMICA_CIBmask'] = maplist.lowpass_filter(reconstructions['353GHz_noSMICA_CIBmask'], lmax=25)
