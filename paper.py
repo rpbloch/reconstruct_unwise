@@ -168,6 +168,15 @@ def compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt, clgg,
     	clv_windowed[i] = np.trapz(window_v*np.trapz(window_v*clv[i,:,:], chis,axis=1), chis)
     	clv_windowed_mm[i] = np.trapz(window_v_mm*np.trapz(window_v_mm*clv[i,:,:], chis,axis=1), chis)
     return clv_windowed, clv_windowed_mm
+
+def compute_common(dTlm, ClTT, Clgg, lmax, nside_out):
+	ClTT_filter = ClTT.copy()[:lmax+1]
+	Clgg_filter = Clgg.copy()[:lmax+1]
+	ClTT_filter[:100] = 1e15
+	Clgg_filter[:100] = 1e15
+	dTlm_xi = hp.almxfl(dTlm, np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0))
+	Tmap_filtered = hp.alm2map(dTlm_xi, lmax=lmax, nside=nside_out)
+	return ClTT_filter, Clgg_filter, Tmap_filtered
     
 ### File Handling
 outdir = 'plots/paper/'
@@ -254,7 +263,7 @@ cltaug_dndz_mm = np.array([interp1d(ls, cltaug_mm_dndz_coarse[i,zbar_index,:], b
 
 ### Velocity
 print('Computing true velocity...')
-velocity_compute_ells = np.unique(np.geomspace(1,30,10).astype(int))
+velocity_compute_ells = np.unique(np.concatenate([np.arange(1,16),np.geomspace(16,35,5)]).astype(int))
 clv = np.zeros((velocity_compute_ells.shape[0],redshifts.shape[0],redshifts.shape[0]))
 PKv = camb.get_matter_power_interpolator(pars,hubble_units=False, k_hunit=False, var1='v_newtonian_cdm',var2='v_newtonian_cdm')
 for l in range(velocity_compute_ells.shape[0]):
@@ -322,6 +331,14 @@ reconstructions['SMICA'] = combine_alm(maplist.processed_alms['SMICA'], maplist.
 reconstructions['COMMANDER'] = combine_alm(maplist.processed_alms['COMMANDER'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['COMMANDER'], maplist.Cls['unWISE'], cltaug_fiducial, noises['COMMANDER'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
 recon_Cls['SMICA'] = maplist.alm2cl(hp.map2alm(reconstructions['SMICA'], lmax=recon_lmax), maplist.fsky)
 recon_Cls['COMMANDER'] = maplist.alm2cl(hp.map2alm(reconstructions['COMMANDER'], lmax=recon_lmax), maplist.fsky)
+recon_Cls['SMICAxCOMMANDER'] = hp.alm2cl(hp.map2alm(reconstructions['SMICA'], lmax=recon_lmax), hp.map2alm(reconstructions['COMMANDER'], lmax=recon_lmax)) / maplist.fsky
+noises['SMICA_mm'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['SMICA'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial_mm)
+noises['COMMANDER_mm'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['COMMANDER'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial_mm)
+reconstructions['SMICA_mm'] = combine_alm(maplist.processed_alms['SMICA'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['SMICA'], maplist.Cls['unWISE'], cltaug_fiducial_mm, noises['SMICA_mm'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+reconstructions['COMMANDER_mm'] = combine_alm(maplist.processed_alms['COMMANDER'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['COMMANDER'], maplist.Cls['unWISE'], cltaug_fiducial_mm, noises['COMMANDER_mm'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+recon_Cls['SMICAxCOMMANDER_mm'] = hp.alm2cl(hp.map2alm(reconstructions['SMICA_mm'], lmax=recon_lmax), hp.map2alm(reconstructions['COMMANDER_mm'], lmax=recon_lmax)) / maplist.fsky
+recon_Cls['SMICA_mm'] = maplist.alm2cl(hp.map2alm(reconstructions['SMICA_mm'], lmax=recon_lmax), maplist.fsky)
+recon_Cls['COMMANDER_mm'] = maplist.alm2cl(hp.map2alm(reconstructions['COMMANDER_mm'], lmax=recon_lmax), maplist.fsky)
 
 for key in map_container:
 	print('    Preprocessing %s' % key)
@@ -334,24 +351,31 @@ for key in map_container:
 	print('    Reconstructing %s' % key)
 	master_cltt = maplist.Cls[key.split('_')[0]]  # Theory ClTT should be on the full frequency sky
 	noises[key] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=master_cltt, clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial)
+	noises[key+'_mm'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=master_cltt, clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial_mm)
 	if '353GHz' not in key:
 		convert_K_flag = True if '100GHz' in key else False
 		reconstructions[key] = combine_alm(maplist.processed_alms[key], maplist.processed_alms['unWISE'], maplist.mask, master_cltt, maplist.Cls['unWISE'], cltaug_fiducial, noises[key], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=convert_K_flag)
+		reconstructions[key+'_mm'] = combine_alm(maplist.processed_alms[key], maplist.processed_alms['unWISE'], maplist.mask, master_cltt, maplist.Cls['unWISE'], cltaug_fiducial_mm, noises[key+'_mm'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=convert_K_flag)
 		recon_Cls[key] = maplist.alm2cl(hp.map2alm(reconstructions[key], lmax=recon_lmax), maplist.fsky)
+		recon_Cls[key+'_mm'] = maplist.alm2cl(hp.map2alm(reconstructions[key+'_mm'], lmax=recon_lmax), maplist.fsky)
 	if ('217GHz' in key) or ('353GHz' in key):
 		reconstructions[key+'_CIBmask'] = combine_alm(maplist.processed_alms[key+'_CIBmask'], maplist.processed_alms['unWISE'], maplist.mask_huge, master_cltt, maplist.Cls['unWISE'], cltaug_fiducial, noises[key], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+		reconstructions[key+'_mm_CIBmask'] = combine_alm(maplist.processed_alms[key+'_CIBmask'], maplist.processed_alms['unWISE'], maplist.mask_huge, master_cltt, maplist.Cls['unWISE'], cltaug_fiducial_mm, noises[key+'_mm'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
 		recon_Cls[key+'_CIBmask'] = maplist.alm2cl(hp.map2alm(reconstructions[key+'_CIBmask'], lmax=recon_lmax), maplist.fsky_huge)
+		recon_Cls[key+'_mm_CIBmask'] = maplist.alm2cl(hp.map2alm(reconstructions[key+'_mm_CIBmask'], lmax=recon_lmax), maplist.fsky_huge)
 
 
 maplist.stored_maps['recon_SMICA'] = maplist.lowpass_filter(reconstructions['SMICA'], lmax=25)
 maplist.stored_maps['recon_COMMANDER'] = maplist.lowpass_filter(reconstructions['COMMANDER'], lmax=25)
 
 print('    Computing windowed velocity')
-clv_windowed, clv_windowed_mm = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['SMICA'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
-clv_windowed_100GHz, clv_windowed_mm_100GHz = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['100GHz'] / pars.TCMB**2, clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
-clv_windowed_143GHz, clv_windowed_mm_143GHz = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['143GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
-clv_windowed_217GHz, clv_windowed_mm_217GHz = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['217GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
-clv_windowed_353GHz, clv_windowed_mm_353GHz = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['353GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+clv_windowed = {key : np.zeros(velocity_compute_ells.size) for key in ('COMMANDER', '100GHz', '143GHz', '217GHz', '353GHz')}
+clv_windowed_mm = {key : np.zeros(velocity_compute_ells.size) for key in ('COMMANDER', '100GHz', '143GHz', '217GHz', '353GHz')}
+clv_windowed['COMMANDER'], clv_windowed_mm['COMMANDER'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['COMMANDER'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+clv_windowed['100GHz'], clv_windowed_mm['100GHz'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['100GHz'] / pars.TCMB**2, clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+clv_windowed['143GHz'], clv_windowed_mm['143GHz'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['143GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+clv_windowed['217GHz'], clv_windowed_mm['217GHz'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['217GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+clv_windowed['353GHz'], clv_windowed_mm['353GHz'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['353GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
 
 print('Post-processing: computing statistics and lowpass-filtered statistics')
 # Common functions
@@ -401,32 +425,295 @@ for l, ell in enumerate(ls):
 	m_to_e = np.diagonal(np.flip(bias_e2(results.redshift_at_comoving_radial_distance(chis), (ell+0.5)/chis[::-1]), axis=1))
 	Pme_at_ells[:,l] = Pmms[:,l] * m_to_e
 
+# Compute dN/dz iterations for P_mm and P_me cases
+print('Errors pre-processing: computing common T fields')
+ClTT_filter_SMICA, Clgg_filter, Tmap_filtered_SMICA = compute_common(maplist.processed_alms['SMICA'], maplist.Cls['SMICA'], maplist.Cls['unWISE'], lmax=maplist.lmax, nside_out=maplist.nside)
+ClTT_filter_COMMANDER, _, Tmap_filtered_COMMANDER = compute_common(maplist.processed_alms['COMMANDER'], maplist.Cls['COMMANDER'], maplist.Cls['unWISE'], lmax=maplist.lmax, nside_out=maplist.nside)
+ClTT_filter_freq = {}
+Tmap_filtered_freq = {}
+for key in ('100GHz', '143GHz', '217GHz', '353GHz'):
+	ClTT_filter_freq[key], _, Tmap_filtered_freq[key] = compute_common(maplist.processed_alms[key], maplist.Cls[key], maplist.Cls['unWISE'], lmax=maplist.lmax, nside_out=maplist.nside)
+	_, _, Tmap_filtered_freq[key+'_noSMICA'] = compute_common(maplist.processed_alms[key + '_noSMICA'], maplist.Cls[key], maplist.Cls['unWISE'], lmax=maplist.lmax, nside_out=maplist.nside)
+	_, _, Tmap_filtered_freq[key+'_noCOMMANDER'] = compute_common(maplist.processed_alms[key + '_noCOMMANDER'], maplist.Cls[key], maplist.Cls['unWISE'], lmax=maplist.lmax, nside_out=maplist.nside)
+	_, _, Tmap_filtered_freq[key+'_thermaldust'] = compute_common(maplist.processed_alms[key + '_thermaldust'], maplist.Cls[key], maplist.Cls['unWISE'], lmax=maplist.lmax, nside_out=maplist.nside)
+	if key == '353GHz':
+		_, _, Tmap_filtered_freq[key+'_CIB'] = compute_common(maplist.processed_alms[key + '_CIB'], maplist.Cls[key], maplist.Cls['unWISE'], lmax=maplist.lmax, nside_out=maplist.nside)
+
+print('Computing dN/dz errors')
+histkeys = ('100GHz', '143GHz', '217GHz', '217GHz_CIBmask', '353GHz_CIBmask')
+histkeys_353 = ('353GHz_CIBmask', '353GHz_noSMICA_CIBmask', '353GHz_noCOMMANDER_CIBmask', '353GHz_thermaldust_CIBmask', '353GHz_CIB_CIBmask')
+
+n_out_COMMANDER_dndz = np.zeros((100, bins_out_normprod_COMMANDER.size-1))
+n_out_COMMANDER_dndz_mm = np.zeros((100, bins_out_normprod_COMMANDER.size-1))
+n_out_dndz = {key : np.zeros((100, bins_freqhist.size-1)) for key in histkeys}
+n_out_dndz_mm = {key : np.zeros((100, bins_freqhist.size-1)) for key in histkeys}
+n_out_353hist_dndz = {key : np.zeros((100, bins_353hist.size-1)) for key in histkeys_353}
+n_out_353hist_dndz_mm = {key : np.zeros((100, bins_353hist.size-1)) for key in histkeys_353}
+
+for i in np.arange(100):
+	print('    Computing reconstructions using dN/dz realization %d of 100' % (i+1))
+	if not os.path.exists('data/cache/lssmap_filtered_dndz-%02d.npy' % i):
+		dlm_zeta = hp.almxfl(maplist.processed_alms['unWISE'], np.divide(cltaug_dndz[i,:], Clgg_filter, out=np.zeros_like(Clgg_filter), where=Clgg_filter!=0))
+		lssmap_filtered = hp.alm2map(dlm_zeta, lmax=maplist.lmax, nside=maplist.nside)
+		np.save('data/cache/lssmap_filtered_dndz-%02d' % i, lssmap_filtered)
+	else:
+		lssmap_filtered = np.load('data/cache/lssmap_filtered_dndz-%02d.npy' % i)
+	if not os.path.exists('data/cache/lssmap_filtered_dndz-%02d_mm.npy' % i):
+		dlm_zeta = hp.almxfl(maplist.processed_alms['unWISE'], np.divide(cltaug_dndz_mm[i,:], Clgg_filter, out=np.zeros_like(Clgg_filter), where=Clgg_filter!=0))
+		lssmap_filtered_mm = hp.alm2map(dlm_zeta, lmax=maplist.lmax, nside=maplist.nside)
+		np.save('data/cache/lssmap_filtered_dndz-%02d_mm' % i, lssmap_filtered_mm)
+	else:
+		lssmap_filtered_mm = np.load('data/cache/lssmap_filtered_dndz-%02d_mm.npy' % i)
+	noises['SMICA_dndz-%02d' % i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=ClTT_filter_SMICA, clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz[i,:])
+	noises['COMMANDER_dndz-%02d' % i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=ClTT_filter_COMMANDER, clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz[i,:])
+	noises['SMICA_dndz-%02d_mm' % i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=ClTT_filter_SMICA, clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz_mm[i,:])
+	noises['COMMANDER_dndz-%02d_mm' % i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=ClTT_filter_COMMANDER, clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz_mm[i,:])
+	outmap_SMICA = Tmap_filtered_SMICA * lssmap_filtered * maplist.mask * noises['SMICA_dndz-%02d' % i]
+	outmap_COMMANDER = Tmap_filtered_COMMANDER * lssmap_filtered * maplist.mask * noises['COMMANDER_dndz-%02d' % i]
+	outmap_SMICA_mm = Tmap_filtered_SMICA * lssmap_filtered_mm * maplist.mask * noises['SMICA_dndz-%02d_mm' % i]
+	outmap_COMMANDER_mm = Tmap_filtered_COMMANDER * lssmap_filtered_mm * maplist.mask * noises['COMMANDER_dndz-%02d_mm' % i]
+	recon_Cls['SMICA_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_SMICA, lmax=recon_lmax), maplist.fsky)
+	recon_Cls['COMMANDER_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_COMMANDER, lmax=recon_lmax), maplist.fsky)
+	recon_Cls['SMICAxCOMMANDER_dndz-%02d' % i] = hp.alm2cl(hp.map2alm(outmap_SMICA, lmax=recon_lmax), hp.map2alm(outmap_COMMANDER, lmax=recon_lmax)) / maplist.fsky
+	recon_Cls['SMICA_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_SMICA_mm, lmax=recon_lmax), maplist.fsky)
+	recon_Cls['COMMANDER_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_COMMANDER_mm, lmax=recon_lmax), maplist.fsky)
+	recon_Cls['SMICAxCOMMANDER_dndz-%02d_mm' % i] = hp.alm2cl(hp.map2alm(outmap_SMICA_mm, lmax=recon_lmax), hp.map2alm(outmap_COMMANDER_mm, lmax=recon_lmax)) / maplist.fsky
+	n_out_COMMANDER_dndz[i,:], _ = np.histogram(outmap_COMMANDER[np.where(maplist.mask!=0)], bins=bins_out_normprod_COMMANDER)
+	n_out_COMMANDER_dndz_mm[i,:], _ = np.histogram(outmap_COMMANDER_mm[np.where(maplist.mask!=0)], bins=bins_out_normprod_COMMANDER)
+	for key in ('100GHz', '143GHz', '217GHz', '353GHz'):
+		Tcorr = pars.TCMB if key == '100GHz' else 1.
+		noises[key+'_dndz-%02d' % i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=ClTT_filter_freq[key], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz[i,:])
+		noises[key+'_dndz-%02d_mm' % i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=ClTT_filter_freq[key], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz_mm[i,:])
+		for case in ('', '_noSMICA', '_noCOMMANDER', '_thermaldust', '_CIB'):
+			if key == '353GHz':
+				outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['353GHz_dndz-%02d' % i]
+				outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['353GHz_dndz-%02d_mm' % i]
+				recon_Cls[key+case+'_CIBmask_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_freq, lmax=recon_lmax), maplist.fsky_huge)
+				recon_Cls[key+case+'_CIBmask_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_freq_mm, lmax=recon_lmax), maplist.fsky_huge)
+				if key+case+'_CIBmask' in histkeys_353:
+					n_out_353hist_dndz[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_353hist)
+					n_out_353hist_dndz_mm[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_353hist)
+				if key+case+'_CIBmask' in histkeys:
+					n_out_dndz[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)
+					n_out_dndz_mm[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)
+			else:
+				if case == '_CIB':
+					continue
+				outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask * noises[key+'_dndz-%02d' % i] / Tcorr
+				outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask * noises[key+'_dndz-%02d_mm' % i] / Tcorr
+				recon_Cls[key+case+'_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_freq, lmax=recon_lmax), maplist.fsky)
+				recon_Cls[key+case+'_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_freq_mm, lmax=recon_lmax), maplist.fsky)
+				if key+case in histkeys:
+					n_out_dndz[key+case][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask!=0)], bins=bins_freqhist)
+					n_out_dndz_mm[key+case][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask!=0)], bins=bins_freqhist)
+				if key+case == '217GHz':
+					outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['217GHz_dndz-%02d' % i]
+					outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['217GHz_dndz-%02d_mm' % i]
+					recon_Cls[key+case+'_CIBmask_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_freq, lmax=recon_lmax), maplist.fsky_huge)
+					recon_Cls[key+case+'_CIBmask_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_freq_mm, lmax=recon_lmax), maplist.fsky_huge)
+					n_out_dndz[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)					
+					n_out_dndz_mm[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)					
+
+
+for key in [k for k in recon_Cls if '_dndz-' in k]:
+	np.save('data/cache/Cls/' + key, recon_Cls[key])
+
+for key in histkeys:
+	np.save('data/cache/histdata_multispec_'+key, n_out_dndz[key])
+	np.save('data/cache/histdata_multispec_'+key+'_mm', n_out_dndz_mm[key])
+
+for key in histkeys_353:
+	np.save('data/cache/histdata_353hist_'+key, n_out_353hist_dndz[key])
+	np.save('data/cache/histdata_353hist_'+key+'_mm', n_out_353hist_dndz_mm[key])
+
+print('    Computing windowed velocity for dN/dz realizations')
+clgg = maplist.Cls['unWISE'].copy()
+keys = ('COMMANDER', '100GHz', '143GHz', '217GHz', '353GHz')
+cltt = {key : maplist.Cls[key] for key in keys}
+terms = {key : np.zeros((100, 1)) for key in keys}
+terms_with_me_entry = {key : np.zeros((100, chis.size)) for key in keys}
+terms_with_mm_me_entry = {key : np.zeros((100, chis.size)) for key in keys}
+ell_const = 2
+for l2 in np.arange(spectra_lmax):
+	Pmm_at_ellprime = np.diagonal(np.flip(Pmm_full.P(results.redshift_at_comoving_radial_distance(chis), (l2+0.5)/chis[::-1], grid=True), axis=1))
+	Pem_at_ellprime = Pmm_at_ellprime * np.diagonal(np.flip(bias_e2(results.redshift_at_comoving_radial_distance(chis), (l2+0.5)/chis[::-1]), axis=1))  # Convert Pmm to Pem
+	Pem_at_ellprime_at_zbar = Pem_at_ellprime[zbar_index]
+	for l1 in np.arange(np.abs(l2-ell_const),l2+ell_const+1):
+		if l1 > spectra_lmax-1 or l1 <2:   #triangle rule
+			continue
+		gamma_ksz_common = np.sqrt((2*l1+1)*(2*l2+1)*(2*ell_const+1)/(4*np.pi))*wigner_symbol(ell_const, l1, l2)
+		gamma_ksz = gamma_ksz_common*cltaug_dndz[:,l2]
+		for key in keys:
+			term_with_me_entry = (gamma_ksz*gamma_ksz/(cltt[key][l1]*clgg[l2]))[:,np.newaxis] * (Pem_at_ellprime/Pem_at_ellprime_at_zbar)[np.newaxis,:]  # #dndz by chi array, rows = dndz realization
+			term_with_mm_me_entry = (gamma_ksz*gamma_ksz/(cltt[key][l1]*clgg[l2]))[:,np.newaxis] * (Pmm_at_ellprime/Pem_at_ellprime_at_zbar)[np.newaxis,:]
+			term_entry = (gamma_ksz*gamma_ksz/(cltt[key][l1]*clgg[l2]))[:,np.newaxis]
+			if False not in np.isfinite(term_entry):
+				terms[key] += term_entry
+				terms_with_me_entry[key] += term_with_me_entry
+				terms_with_mm_me_entry[key] += term_with_mm_me_entry
+
+ratio_me_me = {key : np.zeros((100, chis.size)) for key in keys}
+ratio_mm_me = {key : np.zeros((100, chis.size)) for key in keys}
+window_v = {key : np.zeros((100, chis.size)) for key in keys}
+window_v_mm = {key : np.zeros((100, chis.size)) for key in keys}
+clv_windowed_dndz = {key : np.zeros((100, velocity_compute_ells.size)) for key in keys}
+clv_windowed_mm_dndz = {key : np.zeros((100, velocity_compute_ells.size)) for key in keys}
+
+for key in keys:
+	ratio_me_me[key] = terms_with_me_entry[key] / terms[key]
+	ratio_mm_me[key] = terms_with_mm_me_entry[key] / terms[key]
+	window_v[key] = np.nan_to_num(  ( 1/bin_width ) * ( chibar**2 / chis**2 )[np.newaxis,:] * ( galaxy_window_dndz / galaxy_window_dndz[:,zbar_index,np.newaxis] ) * ( (1+results.redshift_at_comoving_radial_distance(chis))**2 / (1+results.redshift_at_comoving_radial_distance(chibar))**2 )[np.newaxis,:] * ratio_me_me[key]  )
+	window_v_mm[key] = np.nan_to_num(  ( 1/bin_width ) * ( chibar**2 / chis**2 )[np.newaxis,:] * ( galaxy_window_dndz / galaxy_window_dndz[:,zbar_index,np.newaxis] ) * ( (1+results.redshift_at_comoving_radial_distance(chis))**2 / (1+results.redshift_at_comoving_radial_distance(chibar))**2 )[np.newaxis,:] * ratio_mm_me[key]  )
+	for i in np.arange(velocity_compute_ells.size):
+		clv_windowed_dndz[key][:,i] = np.trapz(window_v[key]*np.trapz(window_v[key][:,np.newaxis,:]*clv[i,np.newaxis,:,:], chis,axis=2), chis, axis=1)
+		clv_windowed_mm_dndz[key][:,i] = np.trapz(window_v_mm[key]*np.trapz(window_v_mm[key][:,np.newaxis,:]*clv[i,np.newaxis,:,:], chis,axis=2), chis, axis=1)
+
+print('Computing statistical errors for P_me case')
+dlm_zeta = hp.almxfl(maplist.processed_alms['unWISE'], np.divide(cltaug_fiducial, Clgg_filter, out=np.zeros_like(Clgg_filter), where=Clgg_filter!=0))
+lssmap_filtered = hp.alm2map(dlm_zeta, lmax=maplist.lmax, nside=maplist.nside)
+
+n_stat_iter = 1000
+statistical_Cls = {key : np.zeros((n_stat_iter, velocity_compute_ells.max()+1)) for key in ('COMMANDER', '100GHz', '143GHz', '217GHz', '353GHz')}
+for key in ('COMMANDER', '100GHz', '143GHz', '217GHz', '353GHz'):
+	print('    Computing realizations for ' + key)
+	vspec = interp1d(velocity_compute_ells, clv_windowed[key], bounds_error=False, fill_value=0.)(np.arange(velocity_compute_ells.max()+1))
+	for i in np.arange(n_stat_iter):
+		if os.path.exists('data/cache/Cls/stat/stat_v_plus_n_'+key+'_%03d.npy'%i):
+			statistical_Cls[key][i,:] = np.load('data/cache/Cls/stat/stat_v_plus_n_'+key+'_%03d.npy'%i)
+			continue
+		Tcorr = pars.TCMB if key == '100GHz' else 1.
+		vmap = hp.synfast(vspec, lmax=velocity_compute_ells.max(), nside=maplist.nside)
+		Tlms = hp.synalm(maplist.Cls[key], lmax=maplist.lmax)
+		ClTT_filter = maplist.Cls[key].copy()[:maplist.lmax+1]
+		ClTT_filter[:100] = 1e15
+		Tmap_filtered = hp.alm2map(hp.almxfl(Tlms, np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
+		outmap_noiserecon = Tmap_filtered * lssmap_filtered * maplist.mask * noises[key] / Tcorr
+		statistical_Cls[key][i,:] = hp.anafast((vmap + outmap_noiserecon) * maplist.mask, lmax=velocity_compute_ells.max()) / maplist.fsky
+		np.save('data/cache/Cls/stat/stat_v_plus_n_'+key+'_%03d'%i, statistical_Cls[key][i,:])
+		if (i % 100 == 0) and (i > 0):
+			print('        Completed %d of %d' % (i, n_stat_iter))
+	print('        Completed %d of %d' % (n_stat_iter, n_stat_iter))
+
+print('Computing statistical errors for P_mm case')
+dlm_zeta = hp.almxfl(maplist.processed_alms['unWISE'], np.divide(cltaug_fiducial_mm, Clgg_filter, out=np.zeros_like(Clgg_filter), where=Clgg_filter!=0))
+lssmap_filtered = hp.alm2map(dlm_zeta, lmax=maplist.lmax, nside=maplist.nside)
+
+statistical_Cls_mm = {key : np.zeros((n_stat_iter, velocity_compute_ells.max()+1)) for key in ('COMMANDER', '100GHz', '143GHz', '217GHz', '353GHz')}
+for key in ('COMMANDER', '100GHz', '143GHz', '217GHz', '353GHz'):
+	print('    Computing realizations for ' + key)
+	vspec = interp1d(velocity_compute_ells, clv_windowed_mm[key], bounds_error=False, fill_value=0.)(np.arange(velocity_compute_ells.max()+1))
+	for i in np.arange(n_stat_iter):
+		if os.path.exists('data/cache/Cls/stat/stat_v_plus_n_mm_'+key+'_%03d.npy'%i):
+			statistical_Cls_mm[key][i,:] = np.load('data/cache/Cls/stat/stat_v_plus_n_mm_'+key+'_%03d.npy'%i)
+			continue
+		Tcorr = pars.TCMB if key == '100GHz' else 1.
+		vmap = hp.synfast(vspec, lmax=velocity_compute_ells.max(), nside=maplist.nside)
+		Tlms = hp.synalm(maplist.Cls[key], lmax=maplist.lmax)
+		ClTT_filter = maplist.Cls[key].copy()[:maplist.lmax+1]
+		ClTT_filter[:100] = 1e15
+		Tmap_filtered = hp.alm2map(hp.almxfl(Tlms, np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
+		outmap_noiserecon = Tmap_filtered * lssmap_filtered * maplist.mask * noises[key+'_mm'] / Tcorr
+		statistical_Cls_mm[key][i,:] = hp.anafast((vmap + outmap_noiserecon) * maplist.mask, lmax=velocity_compute_ells.max()) / maplist.fsky
+		np.save('data/cache/Cls/stat/stat_v_plus_n_mm_'+key+'_%03d'%i, statistical_Cls_mm[key][i,:])
+		if (i % 100 == 0) and (i > 0):
+			print('        Completed %d of %d' % (i, n_stat_iter))
+	print('        Completed %d of %d' % (n_stat_iter, n_stat_iter))
+
+print('Errors post-processing: computing plot errors')
+# 1) Get the v_fiducial and the v_fiducial_mm lines and put in their respective errors properly propagated
+# 2) At each ell choose the min/max range values using both sets. For interest check if it's one for bottom one for top.
+make_arr_dndz = lambda arr, key, mmtag : np.array([arr[key+'_dndz-%02d%s'%(i, mmtag)] for i in np.arange(100)])
+errors = {}
+for key in ('SMICA', 'COMMANDER', 'SMICAxCOMMANDER', '100GHz', '143GHz', '217GHz', '353GHz'):
+	Tcorr = pars.TCMB**2 if key == '100GHz' else 1.
+	for case in ('', '_noSMICA', '_noCOMMANDER', '_thermaldust', '_CIB'):
+		if (key in ('SMICA', 'COMMANDER', 'SMICAxCOMMANDER')) and (case != ''):
+			continue
+		if key == '353GHz':
+			rfid    = recon_Cls[key+case+'_CIBmask']
+			rfid_mm = recon_Cls[key+case+'_mm_CIBmask']
+			rdndz_err    = np.std(make_arr_dndz(recon_Cls, key+case+'_CIBmask', ''), axis=0)
+			rdndz_err_mm = np.std(make_arr_dndz(recon_Cls, key+case+'_CIBmask', '_mm'), axis=0)
+			negbias_err = np.where((rfid - rfid_mm) > 0, rfid - rfid_mm, 0.)  # Incoporate offset from fiducial to fiducial mm in correct direction for error: to positive side if mm reconstruction is higher, to negative if lower
+			posbias_err = np.where((rfid - rfid_mm) < 0, rfid_mm - rfid, 0.)
+			errors[key+case+'_CIBmask'] = ( np.min([rdndz_err_mm, rdndz_err], axis=0) + negbias_err, np.max([rdndz_err_mm, rdndz_err], axis=0) + posbias_err )  # Tuple for errorbars
+		else:
+			if case == '_CIB':
+				continue
+			rfid    = recon_Cls[key+case]
+			rfid_mm = recon_Cls[key+case+'_mm']
+			rdndz_err    = np.std(make_arr_dndz(recon_Cls, key+case, ''), axis=0)
+			rdndz_err_mm = np.std(make_arr_dndz(recon_Cls, key+case, '_mm'), axis=0)
+			negbias_err = np.where((rfid - rfid_mm) > 0, rfid - rfid_mm, 0.)  # Incoporate offset from fiducial to fiducial mm in correct direction for error: to positive side if mm reconstruction is higher, to negative if lower
+			posbias_err = np.where((rfid - rfid_mm) < 0, rfid_mm - rfid, 0.)
+			errors[key+case] = ( np.min([rdndz_err_mm, rdndz_err], axis=0) + negbias_err, np.max([rdndz_err_mm, rdndz_err], axis=0) + posbias_err )  # Tuple for errorbars
+			if key+case == '217GHz':
+				rfid    = recon_Cls[key+case+'_CIBmask']
+				rfid_mm = recon_Cls[key+case+'_mm_CIBmask']
+				rdndz_err    = np.std(make_arr_dndz(recon_Cls, key+case+'_CIBmask', ''), axis=0)
+				rdndz_err_mm = np.std(make_arr_dndz(recon_Cls, key+case+'_CIBmask', '_mm'), axis=0)
+				negbias_err = np.where((rfid - rfid_mm) > 0, rfid - rfid_mm, 0.)  # Incoporate offset from fiducial to fiducial mm in correct direction for error: to positive side if mm reconstruction is higher, to negative if lower
+				posbias_err = np.where((rfid - rfid_mm) < 0, rfid_mm - rfid, 0.)
+				errors[key+case+'_CIBmask'] = ( np.min([rdndz_err_mm, rdndz_err], axis=0) + negbias_err, np.max([rdndz_err_mm, rdndz_err], axis=0) + posbias_err )  # Tuple for errorbars
+	# Velocity errors
+	if key in ('SMICA', 'SMICAxCOMMANDER'):
+		continue
+	vfid         = clv_windowed[key]    + (noises[key]       / Tcorr)
+	vfid_mm      = clv_windowed_mm[key] + (noises[key+'_mm'] / Tcorr)
+	vdndz_err    = np.std(clv_windowed_dndz[key]    + np.array([noises[key+'_dndz-%02d'%i]    / Tcorr for i in np.arange(100)])[:,np.newaxis], axis=0)
+	vdndz_err_mm = np.std(clv_windowed_mm_dndz[key] + np.array([noises[key+'_dndz-%02d_mm'%i] / Tcorr for i in np.arange(100)])[:,np.newaxis], axis=0)
+	vstat_err    = np.std(statistical_Cls[key][:,velocity_compute_ells], axis=0)
+	vstat_err_mm = np.std(statistical_Cls_mm[key][:,velocity_compute_ells], axis=0)
+	verr    = np.sqrt(vdndz_err**2 + vstat_err**2)
+	verr_mm = np.sqrt(vdndz_err_mm**2 + vstat_err_mm**2)
+	errors['v_dndz_min'+key] = np.min([vfid_mm - vdndz_err_mm, vfid - vdndz_err], axis=0)
+	errors['v_dndz_max'+key] = np.max([vfid_mm + vdndz_err_mm, vfid + vdndz_err], axis=0)
+	errors['v_total_min'+key] = np.min([vfid_mm - verr_mm, vfid - verr], axis=0)
+	errors['v_total_max'+key] = np.max([vfid_mm + verr_mm, vfid + verr], axis=0)
+	for vcase in ('v_dndz_max', 'v_dndz_min', 'v_total_max', 'v_total_min'):
+		errors[vcase+key] = interp1d(velocity_compute_ells, errors[vcase+key], bounds_error=False, fill_value=0.)(np.arange(velocity_compute_ells.max()+1))
+
+
+v_COMMANDER_interp = interp1d(velocity_compute_ells,clv_windowed['COMMANDER']+noises['COMMANDER'],bounds_error=False,fill_value=0.)(np.arange(velocity_compute_ells.max()+1))
+v_100GHz_interp = interp1d(velocity_compute_ells,clv_windowed['100GHz']+(noises['100GHz']/pars.TCMB**2),bounds_error=False,fill_value=0.)(np.arange(velocity_compute_ells.max()+1))
+v_143GHz_interp = interp1d(velocity_compute_ells,clv_windowed['143GHz']+noises['143GHz'],bounds_error=False,fill_value=0.)(np.arange(velocity_compute_ells.max()+1))
+v_217GHz_interp = interp1d(velocity_compute_ells,clv_windowed['217GHz']+noises['217GHz'],bounds_error=False,fill_value=0.)(np.arange(velocity_compute_ells.max()+1))
+v_353GHz_interp = interp1d(velocity_compute_ells,clv_windowed['353GHz']+noises['353GHz'],bounds_error=False,fill_value=0.)(np.arange(velocity_compute_ells.max()+1))
 
 ### Plotting
 # Common functions
-bandpowers = lambda spectrum : np.array([spectrum[1+(5*i):1+(5*(i+1))].mean() for i in np.arange(spectrum.size//5)])
+bandpowers = lambda spectrum : np.array([spectrum[2:][1+(5*i):1+(5*(i+1))].mean() for i in np.arange(spectrum.size//5)])
+bandpowers_errbar = lambda spectrum : np.array([np.array([spectrum[j][2:][1+(5*i):1+(5*(i+1))].mean() for i in np.arange(spectrum[j].size//5)]) for j in np.arange(len(spectrum))])
 pixel_scaling_masked = lambda distribution, FSKY : (12*2048**2) * FSKY * (distribution / simps(distribution))
 c = mpl.colors.ListedColormap(['darkred', 'gold'])
-x_ells = bandpowers(np.arange(recon_lmax+1))
+x_ells = bandpowers(np.arange(recon_lmax+3))
 linecolors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+darken = lambda color, amount :  colorsys.hls_to_rgb(colorsys.rgb_to_hls(*mc.to_rgb(color))[0], 1 - amount * (1 - colorsys.rgb_to_hls(*mc.to_rgb(color))[1]), colorsys.rgb_to_hls(*mc.to_rgb(color))[2])
 
 ## Fiducial reconstruction maps: needs to be cropped by 3rd party program, hp.mollview is uncooperative with matplotlib formatting for whitespace.
+reconplot_minval = np.min([(maplist.stored_maps['recon_SMICA']*maplist.mask).min(),(maplist.stored_maps['recon_COMMANDER']*maplist.mask).min()])
+reconplot_maxval = np.max([(maplist.stored_maps['recon_SMICA']*maplist.mask).max(),(maplist.stored_maps['recon_COMMANDER']*maplist.mask).max()])
 fig, (ax1, ax2) = plt.subplots(2,1,figsize=(10,15))
 plt.axes(ax1)
-hp.mollview(maplist.stored_maps['recon_SMICA']*maplist.mask, title=r'SMICA x unWISE Reconstruction $\left(\ell_{\mathrm{max}}\leq 25\right)$', unit=r'$\frac{v}{c}$', hold=True)
+hp.mollview(maplist.stored_maps['recon_SMICA']*maplist.mask, title=r'SMICA x unWISE Reconstruction $\left(\ell_{\mathrm{max}}\leq 25\right)$', unit=r'$\frac{v}{c}$', min=reconplot_minval, max=reconplot_maxval, hold=True)
 plt.axes(ax2)
-hp.mollview(maplist.stored_maps['recon_COMMANDER']*maplist.mask, title=r'COMMANDER x unWISE Reconstruction $\left(\ell_{\mathrm{max}}\leq 25\right)$',unit=r'$\frac{v}{c}$', hold=True)
+hp.mollview(maplist.stored_maps['recon_COMMANDER']*maplist.mask, title=r'COMMANDER x unWISE Reconstruction $\left(\ell_{\mathrm{max}}\leq 25\right)$',unit=r'$\frac{v}{c}$', min=reconplot_minval, max=reconplot_maxval, hold=True)
 plt.tight_layout()
 plt.savefig(outdir+'recon_outputs')
 
 # SNR plot, main result for fiducial reconstructions
 plt.figure()
-plt.semilogy(x_ells, bandpowers(recon_Cls['SMICA']), label='SMICA x unWISE Reconstruction', ls='None', marker='x', zorder=100,color=linecolors[0])
-plt.semilogy(x_ells, bandpowers(recon_Cls['COMMANDER']),label='COMMANDER x unWISE Reconstruction', ls='None', marker='x', zorder=100,color=linecolors[3])
-plt.semilogy(x_ells, np.repeat(noises['SMICA'],x_ells.size), c='k',label='Theory Noise', ls='--', zorder=10, lw=2)
-plt.xlim([2, 25])
-plt.semilogy(bandpowers(np.arange(50)), bandpowers(interp1d(velocity_compute_ells,clv_windowed+noises['SMICA'],bounds_error=False,fill_value=0.)(np.arange(50))), color=linecolors[1],lw=2,label='Windowed velocity + noise')
-plt.legend()
+plt.errorbar(x_ells, bandpowers(recon_Cls['SMICA']), yerr=bandpowers_errbar(errors['SMICA']), capsize=3, label='SMICA x unWISE Reconstruction', ls='None', marker='x', zorder=100, color=linecolors[0])
+plt.errorbar(x_ells, bandpowers(recon_Cls['COMMANDER']), yerr=bandpowers_errbar(errors['COMMANDER']), capsize=3, label='COMMANDER x unWISE Reconstruction', ls='None', marker='x', zorder=100, color=linecolors[3])
+plt.errorbar(x_ells, bandpowers(recon_Cls['SMICAxCOMMANDER']), yerr=bandpowers_errbar(errors['SMICAxCOMMANDER']), capsize=3, label='SMICA x COMMANDER Reconstructions', ls='None', marker='x', zorder=100, color=linecolors[4])
+plt.semilogy(np.arange(100), np.repeat(noises['COMMANDER'],100), c='k',label='Theory Noise', ls='--', zorder=10, lw=2)
+plt.xlim([2, 27])
+plt.semilogy(np.arange(velocity_compute_ells.max()+1), v_COMMANDER_interp, color=darken(linecolors[1],1.2),lw=2,label='Windowed velocity + noise')
+plt.fill_between(np.arange(velocity_compute_ells.max()+1), errors['v_dndz_minCOMMANDER'], errors['v_dndz_maxCOMMANDER'], color=linecolors[1], alpha=0.75)
+plt.fill_between(np.arange(velocity_compute_ells.max()+1), errors['v_total_minCOMMANDER'], errors['v_total_maxCOMMANDER'], color=linecolors[1], alpha=0.35)
+order = [2,3,4,1,0]
+handles, labels = plt.gca().get_legend_handles_labels()
+plt.legend([handles[idx] for idx in order],[labels[idx] for idx in order])
 plt.xlabel(r'$\ell$')
 plt.ylabel(r'$\frac{v^2}{c^2}$',rotation=0,fontsize=16)
 plt.title('Planck x unWISE Reconstruction')
@@ -436,28 +723,40 @@ plt.savefig(outdir+'signal_noise_gauss.png')
 # 2pt frequency statistics for 100, 143, 217 GHz with fiducial mask
 fig, (ax100, ax143, ax217) = plt.subplots(1,3,figsize=(18,6))
 for freq, ax in zip([100, 143, 217], [ax100, ax143, ax217]):
-	Tcorr = pars.TCMB**2 if freq == 100 else 1.
-	clv_windowed_freq = {100 : clv_windowed_100GHz, 143 : clv_windowed_143GHz, 217 : clv_windowed_217GHz}[freq]
-	ax.semilogy(x_ells, bandpowers(recon_Cls['%dGHz' % freq]), label='%d GHz x unWISE' % freq, ls='None', marker='x', zorder=100, color=linecolors[0])
-	ax.semilogy(x_ells, bandpowers(recon_Cls['%dGHz_noSMICA' % freq]), label='%d GHz - SMICA x unWISE' % freq, ls='None', marker='x', zorder=100, color=linecolors[2])
-	ax.semilogy(x_ells, bandpowers(recon_Cls['%dGHz_noCOMMANDER' % freq]), label='%d GHz - COMMANDER x unWISE' % freq, ls='None', marker='x', zorder=100, color=linecolors[3])
-	ax.semilogy(x_ells, bandpowers(recon_Cls['%dGHz_thermaldust' % freq]), label='Thermal dust x unWISE', ls='None', marker='x', zorder=100, color=linecolors[4])
-	ax.semilogy(bandpowers(np.arange(50)), bandpowers(interp1d(velocity_compute_ells, clv_windowed_freq+(noises['%dGHz' % freq] / Tcorr), bounds_error=False, fill_value='extrapolate', kind='linear')(np.arange(50))), color=linecolors[1],lw=2,label='Windowed velocity + noise')
+	v_freq = {100 : v_100GHz_interp, 143 : v_143GHz_interp, 217 : v_217GHz_interp}[freq]
+	ax.errorbar(x_ells, bandpowers(recon_Cls['%dGHz' % freq]), label='%d GHz x unWISE' % freq, yerr=bandpowers_errbar(errors['%dGHz' % freq]), capsize=3, ls='None', marker='x', zorder=100, color=linecolors[0])
+	ax.errorbar(x_ells, bandpowers(recon_Cls['%dGHz_noSMICA' % freq]), label='%d GHz - SMICA x unWISE' % freq, yerr=bandpowers_errbar(errors['%dGHz_noSMICA' % freq]), capsize=3, ls='None', marker='x', zorder=100, color=linecolors[2])
+	ax.errorbar(x_ells, bandpowers(recon_Cls['%dGHz_noCOMMANDER' % freq]), label='%d GHz - COMMANDER x unWISE' % freq, yerr=bandpowers_errbar(errors['%dGHz_noCOMMANDER' % freq]), capsize=3, ls='None', marker='x', zorder=100, color=linecolors[3])
+	ax.errorbar(x_ells, bandpowers(recon_Cls['%dGHz_thermaldust' % freq]), label='Thermal dust x unWISE', yerr=bandpowers_errbar(errors['%dGHz_thermaldust' % freq]), capsize=3, ls='None', marker='x', zorder=100, color=linecolors[4])
+	ax.semilogy(np.arange(velocity_compute_ells.max()+1), v_freq, color=darken(linecolors[1],1.2), lw=2, label='Windowed velocity + noise')
+	ax.fill_between(np.arange(velocity_compute_ells.max()+1), errors['v_dndz_min%dGHz'%freq], errors['v_dndz_max%dGHz'%freq], color=linecolors[1], alpha=0.75)
+	ax.fill_between(np.arange(velocity_compute_ells.max()+1), errors['v_total_min%dGHz'%freq], errors['v_total_max%dGHz'%freq], color=linecolors[1], alpha=0.35)
 	ax.set_title('Reconstructions at %d GHz' % freq)
-	ax.set_xlim([2, 25])
-	ax.legend()
+	ax.set_xlim([2, 27])
 	ax.set_xlabel(r'$\ell$')
 	ax.set_ylabel(r'$\frac{v^2}{c^2}$',rotation=0,fontsize=16)
+ymin = ax100.get_ylim()[0]
+ymax = ax217.get_ylim()[1]
+for ax in (ax100, ax143, ax217):
+	ax.set_ylim([ymin, 1e-6])
+	order = [1,2,3,4,0]
+	handles, labels = ax.get_legend_handles_labels()
+	ax.legend([handles[idx] for idx in order],[labels[idx] for idx in order])
 plt.tight_layout()
 plt.savefig(outdir+'freq_recon_fiducialmask')
 
 # 2pt statistics at 217 GHz for the two different masks
 plt.figure()
-plt.semilogy(x_ells, bandpowers(recon_Cls['217GHz']), label='Fiducial mask', ls='None', marker='x', zorder=100, color=linecolors[0])
-plt.semilogy(x_ells, bandpowers(recon_Cls['217GHz_CIBmask']), label='Large mask', ls='None', marker='x', zorder=100, color=linecolors[2])
-plt.semilogy(bandpowers(np.arange(50)), bandpowers(interp1d(velocity_compute_ells, clv_windowed_217GHz+noises['217GHz'], bounds_error=False, fill_value='extrapolate', kind='linear')(np.arange(50))), color=linecolors[1],lw=2,label='Windowed velocity + noise')
-plt.xlim([2, 25])
-plt.legend()
+plt.errorbar(x_ells, bandpowers(recon_Cls['217GHz']), yerr=bandpowers_errbar(errors['217GHz']), capsize=3, label='Fiducial mask', ls='None', marker='x', zorder=100, color=linecolors[0])
+plt.errorbar(x_ells, bandpowers(recon_Cls['217GHz_CIBmask']), yerr=bandpowers_errbar(errors['217GHz_CIBmask']), capsize=3, label='Large mask', ls='None', marker='x', zorder=100, color=linecolors[2])
+plt.semilogy(np.arange(100), np.repeat(noises['217GHz'],100), c='k',label='Theory Noise', ls='--', zorder=10, lw=2)
+plt.semilogy(np.arange(velocity_compute_ells.max()+1), v_217GHz_interp, color=darken(linecolors[1],1.2), lw=2, label='Windowed velocity + noise')
+plt.fill_between(np.arange(velocity_compute_ells.max()+1), errors['v_dndz_min217GHz'], errors['v_dndz_max217GHz'], color=linecolors[1], alpha=0.75)
+plt.fill_between(np.arange(velocity_compute_ells.max()+1), errors['v_total_min217GHz'], errors['v_total_max217GHz'], color=linecolors[1], alpha=0.35)
+plt.xlim([2, 27])
+order = [2,3,1,0]
+handles, labels = plt.gca().get_legend_handles_labels()
+plt.legend([handles[idx] for idx in order],[labels[idx] for idx in order])
 plt.xlabel(r'$\ell$')
 plt.ylabel(r'$\frac{v^2}{c^2}$     ',rotation=0,fontsize=16)
 plt.title('Reconstructions at 217 GHz')
@@ -466,12 +765,17 @@ plt.savefig(outdir+'217_recon_masks')
 
 # 2pt statistics at 353 GHz for the different foregrounds
 plt.figure()
-plt.semilogy(x_ells, bandpowers(recon_Cls['353GHz_CIBmask']), label='353 GHz x unWISE', ls='None', marker='x', zorder=100, color=linecolors[0])
-plt.semilogy(x_ells, bandpowers(recon_Cls['353GHz_thermaldust_CIBmask']), label='thermal dust x unWISE', ls='None', marker='x', zorder=100, color=linecolors[2])
-plt.semilogy(x_ells, bandpowers(recon_Cls['353GHz_CIB_CIBmask']), label='CIB x unWISE', ls='None', marker='x', zorder=100, color=linecolors[3])
-plt.semilogy(bandpowers(np.arange(50)), bandpowers(interp1d(velocity_compute_ells, clv_windowed_353GHz+noises['353GHz'], bounds_error=False, fill_value='extrapolate', kind='linear')(np.arange(50))), color=linecolors[1],lw=2,label='Windowed velocity + noise')
-plt.xlim([2, 25])
-plt.legend()
+plt.errorbar(x_ells, bandpowers(recon_Cls['353GHz_CIBmask']), yerr=bandpowers_errbar(errors['353GHz_CIBmask']), capsize=3, label='353 GHz x unWISE', ls='None', marker='x', zorder=100, color=linecolors[0])
+plt.errorbar(x_ells, bandpowers(recon_Cls['353GHz_thermaldust_CIBmask']), yerr=bandpowers_errbar(errors['353GHz_thermaldust_CIBmask']), capsize=3, label='thermal dust x unWISE', ls='None', marker='x', zorder=100, color=linecolors[2])
+plt.errorbar(x_ells, bandpowers(recon_Cls['353GHz_CIB_CIBmask']), yerr=bandpowers_errbar(errors['353GHz_CIB_CIBmask']), capsize=3, label='CIB x unWISE', ls='None', marker='x', zorder=100, color=linecolors[3])
+plt.semilogy(np.arange(100), np.repeat(noises['353GHz'],100), c='k',label='Theory Noise', ls='--', zorder=10, lw=2)
+plt.semilogy(np.arange(velocity_compute_ells.max()+1), v_353GHz_interp, color=darken(linecolors[1],1.2), lw=2, label='Windowed velocity + noise')
+plt.fill_between(np.arange(velocity_compute_ells.max()+1), errors['v_dndz_min353GHz'], errors['v_dndz_max353GHz'], color=linecolors[1], alpha=0.75)
+plt.fill_between(np.arange(velocity_compute_ells.max()+1), errors['v_total_min353GHz'], errors['v_total_max353GHz'], color=linecolors[1], alpha=0.35)
+plt.xlim([2, 27])
+order = [2,3,4,1,0]
+handles, labels = plt.gca().get_legend_handles_labels()
+plt.legend([handles[idx] for idx in order],[labels[idx] for idx in order])
 plt.xlabel(r'$\ell$')
 plt.ylabel(r'$\frac{v^2}{c^2}$     ',rotation=0,fontsize=16)
 plt.title('Reconstructions at 353 GHz with large mask')
@@ -522,19 +826,20 @@ hp.mollview(maplist.mask_huge, cmap=c, cbar=False, title=r'Large Reconstruction 
 plt.savefig(outdir+'hugemask_unwise')
 
 # 1pt statistics for the fiducial reconstruction
+pdiff_expect = pixel_scaling_masked(expect_normprod_COMMANDER, maplist.fsky)
+pdiff_measure = pixel_scaling_masked(n_out_normprod_COMMANDER,maplist.fsky)
+percent_diff = 200*np.abs(pdiff_measure - pdiff_expect) / (pdiff_measure + pdiff_expect)
 plt.figure()
-plt.fill_between(centres(bins_out_normprod_COMMANDER), np.zeros(n_out_normprod_COMMANDER.size), pixel_scaling_masked(n_out_normprod_COMMANDER,maplist.fsky)/1e3, label='Velocity reconstruction (VR)')
-plt.plot(centres(bins_out_normprod_COMMANDER), pixel_scaling_masked(expect_normprod_COMMANDER, maplist.fsky)/1e3,color='k', ls='--',label='Normal product dist. (NPD)')
-ax_inset = plt.gca().axes.inset_axes([0.1, 0.65, 0.3, 0.25])
-ax_inset.plot(centres(bins_out_normprod_COMMANDER), (pixel_scaling_masked(n_out_normprod_COMMANDER,maplist.fsky)-pixel_scaling_masked(expect_normprod_COMMANDER, maplist.fsky))/1e3, label='Velocity reconstruction',lw=0.1)
-ax_inset.set_xlim([-.12,.12])
-ax_inset.set_ylim([-.15,.5])
-ax_inset.set_yticks([0.,-.1,.1,.4],['0','-100','100','400'])
-ax_inset.set_xticks([0.,-.1,.1],['0','-0.1','0.1'])
-ax_inset.set_title(r'$N_{\mathrm{pix}}^{\mathrm{VR}} - N_{\mathrm{pix}}^{\mathrm{NPD}}$',fontsize=10)
-y1, y2 = plt.ylim()
-plt.ylim([0, y2]) 
-plt.xlim([-.3,.3])
+plt.fill_between(centres(bins_out_normprod_COMMANDER), np.zeros(n_out_normprod_COMMANDER.size), pixel_scaling_masked(n_out_normprod_COMMANDER,maplist.fsky)/1e3, label='Velocity reconstruction')
+plt.plot(centres(bins_out_normprod_COMMANDER), pixel_scaling_masked(expect_normprod_COMMANDER, maplist.fsky)/1e3,color='k', ls='--',label='Normal product distribution')
+ax_inset = plt.gca().axes.inset_axes([0.1, 0.62, 0.3, 0.25])
+ax_inset.plot(centres(bins_out_normprod_COMMANDER), percent_diff, label='Velocity reconstruction',lw=0.1)
+ax_inset.set_xlim([-.075,.075])
+ax_inset.set_ylim([0,40])
+ax_inset.set_xticks([0.,-.06,.06],['0','-0.06','0.06'])
+ax_inset.set_title('% difference',fontsize=10)
+plt.ylim([0, 5.2]) 
+plt.xlim([-.075,.075])
 plt.xlabel(r'$\frac{\Delta T}{T}$', fontsize=16)
 plt.ylabel(r'$N_{\mathrm{pix}}\ \left[\times 10^3\right]$')
 plt.title('Planck x unWISE pixel value distribution')
@@ -544,11 +849,17 @@ plt.savefig(outdir+'recon_1pt')
 
 # 1pt statistics across multiple frequencies and masks
 plt.figure()
-plt.plot(centres(bins_freqhist)*299792.458, n_out_100/simps(n_out_100), label='100 GHz')
-plt.plot(centres(bins_freqhist)*299792.458, n_out_143/simps(n_out_143), label='143 GHz')
-plt.plot(centres(bins_freqhist)*299792.458, n_out_217/simps(n_out_217), label='217 GHz (fiducial mask)')
-plt.plot(centres(bins_freqhist)*299792.458, n_out_217_huge/simps(n_out_217_huge), label='217 GHz (large mask)')
-plt.plot(centres(bins_freqhist)*299792.458, n_out_353_huge/simps(n_out_353_huge), label='353 GHz (large mask)')
+l1, = plt.plot(centres(bins_freqhist)*299792.458, n_out_100/simps(n_out_100), label='100 GHz', zorder=95)
+l2, = plt.plot(centres(bins_freqhist)*299792.458, n_out_143/simps(n_out_143), label='143 GHz', zorder=96)
+l3, = plt.plot(centres(bins_freqhist)*299792.458, n_out_217/simps(n_out_217), label='217 GHz (fiducial mask)', zorder=97)
+l4, = plt.plot(centres(bins_freqhist)*299792.458, n_out_217_huge/simps(n_out_217_huge), label='217 GHz (large mask)', zorder=98)
+l5, = plt.plot(centres(bins_freqhist)*299792.458, n_out_353_huge/simps(n_out_353_huge), label='353 GHz (large mask)', zorder=99)
+plt.fill_between(centres(bins_freqhist)*299792.458, np.min(n_out_dndz['100GHz'],axis=0)/simps(n_out_100), np.max(n_out_dndz['100GHz'],axis=0)/simps(n_out_100), alpha=0.5, color=l1.get_c(), lw=0.)
+plt.fill_between(centres(bins_freqhist)*299792.458, np.min(n_out_dndz['143GHz'],axis=0)/simps(n_out_143), np.max(n_out_dndz['143GHz'],axis=0)/simps(n_out_143), alpha=0.5, color=l2.get_c(), lw=0.)
+plt.fill_between(centres(bins_freqhist)*299792.458, np.min(n_out_dndz['217GHz'],axis=0)/simps(n_out_217), np.max(n_out_dndz['217GHz'],axis=0)/simps(n_out_217), alpha=0.5, color=l3.get_c(), lw=0.)
+plt.fill_between(centres(bins_freqhist)*299792.458, np.min(n_out_dndz['217GHz_CIBmask'],axis=0)/simps(n_out_217_huge), np.max(n_out_dndz['217GHz_CIBmask'],axis=0)/simps(n_out_217_huge), alpha=0.5, color=l4.get_c(), lw=0.)
+plt.fill_between(centres(bins_freqhist)*299792.458, np.min(n_out_dndz['353GHz_CIBmask'],axis=0)/simps(n_out_353_huge), np.max(n_out_dndz['353GHz_CIBmask'],axis=0)/simps(n_out_353_huge), alpha=0.5, color=l5.get_c(), lw=0.)
+plt.ylim([0.00001,plt.ylim()[1]*0.85])
 plt.xlabel('km/s')
 plt.ylabel(r'Normalized $\mathrm{N}_{\mathrm{pix}}$')
 plt.title('Frequency map reconstruction pixel values')
@@ -559,11 +870,12 @@ plt.savefig(outdir+'1ptdrift')
 
 # 1pt statistics for 353 GHz for different foregrounds
 plt.figure()
-plt.plot(centres(bins_353hist)*299792.458, n_out_353_353hist/simps(n_out_353_353hist), label='353 GHz x unWISE')
-plt.plot(centres(bins_353hist)*299792.458, n_out_353_noSMICA/simps(n_out_353_noSMICA), label='353 GHz - SMICA x unWISE')
-plt.plot(centres(bins_353hist)*299792.458, n_out_353_noCOMMANDER/simps(n_out_353_noCOMMANDER), label='353 GHz - COMMANDER x unWISE')
-plt.plot(centres(bins_353hist)*299792.458, n_out_353_thermaldust/simps(n_out_353_thermaldust), label='Thermal dust x unWISE')
-plt.plot(centres(bins_353hist)*299792.458, n_out_353_CIB/simps(n_out_353_CIB), label='CIB x unWISE')
+plt.plot(centres(bins_353hist)*299792.458, n_out_353_353hist/simps(n_out_353_353hist), label='353 GHz x unWISE', zorder=97)
+plt.plot(centres(bins_353hist)*299792.458, n_out_353_noSMICA/simps(n_out_353_noSMICA), label='353 GHz - SMICA x unWISE', zorder=95)
+plt.plot(centres(bins_353hist)*299792.458, n_out_353_noCOMMANDER/simps(n_out_353_noCOMMANDER), label='353 GHz - COMMANDER x unWISE', zorder=96)
+plt.plot(centres(bins_353hist)*299792.458, n_out_353_thermaldust/simps(n_out_353_thermaldust), label='Thermal dust x unWISE', zorder=99)
+plt.plot(centres(bins_353hist)*299792.458, n_out_353_CIB/simps(n_out_353_CIB), label='CIB x unWISE', zorder=98)
+plt.ylim([0.00001, plt.ylim()[1]*.98])
 plt.xlabel('km/s')
 plt.ylabel(r'Normalized $\mathrm{N}_{\mathrm{pix}}$')
 plt.title('353 GHz large-masked reconstruction pixel values   ')
