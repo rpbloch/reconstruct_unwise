@@ -468,63 +468,180 @@ for i in np.arange(100):
 	noises['COMMANDER_dndz-%02d' % i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=ClTT_filter_COMMANDER, clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz[i,:])
 	noises['SMICA_dndz-%02d_mm' % i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=ClTT_filter_SMICA, clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz_mm[i,:])
 	noises['COMMANDER_dndz-%02d_mm' % i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=ClTT_filter_COMMANDER, clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz_mm[i,:])
-	outmap_SMICA = Tmap_filtered_SMICA * lssmap_filtered * maplist.mask * noises['SMICA_dndz-%02d' % i]
-	outmap_COMMANDER = Tmap_filtered_COMMANDER * lssmap_filtered * maplist.mask * noises['COMMANDER_dndz-%02d' % i]
-	outmap_SMICA_mm = Tmap_filtered_SMICA * lssmap_filtered_mm * maplist.mask * noises['SMICA_dndz-%02d_mm' % i]
-	outmap_COMMANDER_mm = Tmap_filtered_COMMANDER * lssmap_filtered_mm * maplist.mask * noises['COMMANDER_dndz-%02d_mm' % i]
-	recon_Cls['SMICA_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_SMICA, lmax=recon_lmax), maplist.fsky)
-	recon_Cls['COMMANDER_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_COMMANDER, lmax=recon_lmax), maplist.fsky)
-	recon_Cls['SMICAxCOMMANDER_dndz-%02d' % i] = hp.alm2cl(hp.map2alm(outmap_SMICA, lmax=recon_lmax), hp.map2alm(outmap_COMMANDER, lmax=recon_lmax)) / maplist.fsky
-	recon_Cls['SMICA_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_SMICA_mm, lmax=recon_lmax), maplist.fsky)
-	recon_Cls['COMMANDER_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_COMMANDER_mm, lmax=recon_lmax), maplist.fsky)
-	recon_Cls['SMICAxCOMMANDER_dndz-%02d_mm' % i] = hp.alm2cl(hp.map2alm(outmap_SMICA_mm, lmax=recon_lmax), hp.map2alm(outmap_COMMANDER_mm, lmax=recon_lmax)) / maplist.fsky
-	n_out_COMMANDER_dndz[i,:], _ = np.histogram(outmap_COMMANDER[np.where(maplist.mask!=0)], bins=bins_out_normprod_COMMANDER)
-	n_out_COMMANDER_dndz_mm[i,:], _ = np.histogram(outmap_COMMANDER_mm[np.where(maplist.mask!=0)], bins=bins_out_normprod_COMMANDER)
+	if not os.path.exists('data/cache/Cls/' + 'SMICA_dndz-%02d.npy'% i):
+		outmap_SMICA = Tmap_filtered_SMICA * lssmap_filtered * maplist.mask * noises['SMICA_dndz-%02d' % i]
+		recon_Cls['SMICA_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_SMICA, lmax=recon_lmax), maplist.fsky)
+	else:
+		recon_Cls['SMICA_dndz-%02d' % i] = np.load('data/cache/Cls/SMICA_dndz-%02d.npy'%i)
+		if 'outmap_SMICA' in globals():
+			del outmap_SMICA
+	if not os.path.exists('data/cache/Cls/' + 'COMMANDER_dndz-%02d.npy' % i):
+		outmap_COMMANDER = Tmap_filtered_COMMANDER * lssmap_filtered * maplist.mask * noises['COMMANDER_dndz-%02d' % i]
+		recon_Cls['COMMANDER_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_COMMANDER, lmax=recon_lmax), maplist.fsky)
+	else:
+		recon_Cls['COMMANDER_dndz-%02d' % i] = np.load('data/cache/Cls/COMMANDER_dndz-%02d.npy'%i)
+		if 'outmap_COMMANDER' in globals():
+			del outmap_COMMANDER
+	if not os.path.exists('data/cache/Cls/' + 'SMICAxCOMMANDER_dndz-%02d.npy' % i):
+		if 'outmap_SMICA' not in globals():
+			outmap_SMICA = Tmap_filtered_SMICA * lssmap_filtered * maplist.mask * noises['SMICA_dndz-%02d' % i]
+		if 'outmap_COMMANDER' not in globals():
+			outmap_COMMANDER = Tmap_filtered_COMMANDER * lssmap_filtered * maplist.mask * noises['COMMANDER_dndz-%02d' % i]
+		recon_Cls['SMICAxCOMMANDER_dndz-%02d' % i] = hp.alm2cl(hp.map2alm(outmap_SMICA, lmax=recon_lmax), hp.map2alm(outmap_COMMANDER, lmax=recon_lmax)) / maplist.fsky
+	else:
+		recon_Cls['SMICAxCOMMANDER_dndz-%02d' % i] = np.load('data/cache/Cls/SMICAxCOMMANDER_dndz-%02d.npy' % i)
+	if not os.path.exists('data/cache/Cls/' + 'SMICA_dndz-%02d_mm.npy'% i):
+		outmap_SMICA_mm = Tmap_filtered_SMICA * lssmap_filtered_mm * maplist.mask * noises['SMICA_dndz-%02d_mm' % i]
+		recon_Cls['SMICA_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_SMICA_mm, lmax=recon_lmax), maplist.fsky)
+	else:
+		recon_Cls['SMICA_dndz-%02d_mm' % i] = np.load('data/cache/Cls/SMICA_dndz-%02d_mm.npy'%i)
+		if 'outmap_SMICA_mm' in globals():
+			del outmap_SMICA_mm
+	if not os.path.exists('data/cache/Cls/' + 'COMMANDER_dndz-%02d_mm.npy' % i):
+		outmap_COMMANDER_mm = Tmap_filtered_COMMANDER * lssmap_filtered_mm * maplist.mask * noises['COMMANDER_dndz-%02d_mm' % i]
+		recon_Cls['COMMANDER_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_COMMANDER_mm, lmax=recon_lmax), maplist.fsky)
+	else:
+		recon_Cls['COMMANDER_dndz-%02d_mm' % i] = np.load('data/cache/Cls/COMMANDER_dndz-%02d_mm.npy'%i)
+		if 'outmap_COMMANDER_mm' in globals():
+			del outmap_COMMANDER_mm
+	if not os.path.exists('data/cache/Cls/' + 'SMICAxCOMMANDER_dndz-%02d_mm.npy' % i):
+		if 'outmap_SMICA_mm' not in globals():
+			outmap_SMICA_mm = Tmap_filtered_SMICA * lssmap_filtered_mm * maplist.mask * noises['SMICA_dndz-%02d_mm' % i]
+		if 'outmap_COMMANDER_mm' not in globals():
+			outmap_COMMANDER_mm = Tmap_filtered_COMMANDER * lssmap_filtered_mm * maplist.mask * noises['COMMANDER_dndz-%02d_mm' % i]
+		recon_Cls['SMICAxCOMMANDER_dndz-%02d_mm' % i] = hp.alm2cl(hp.map2alm(outmap_SMICA_mm, lmax=recon_lmax), hp.map2alm(outmap_COMMANDER_mm, lmax=recon_lmax)) / maplist.fsky
+	else:
+		recon_Cls['SMICAxCOMMANDER_dndz-%02d_mm' % i] = np.load('data/cache/Cls/SMICAxCOMMANDER_dndz-%02d_mm.npy' % i)
+	if not os.path.exists('data/cache/histdata_multispec_COMMANDER.npy'):
+		if 'outmap_COMMANDER' not in globals():
+			outmap_COMMANDER = Tmap_filtered_COMMANDER * lssmap_filtered * maplist.mask * noises['COMMANDER_dndz-%02d' % i]
+		n_out_COMMANDER_dndz[i,:], _ = np.histogram(outmap_COMMANDER[np.where(maplist.mask!=0)], bins=bins_out_normprod_COMMANDER)
+	else:
+		n_out_COMMANDER_dndz[i,:] = np.load('data/cache/histdata_multispec_COMMANDER.npy')[i,:]
+	if not os.path.exists('data/cache/histdata_multispec_COMMANDER_mm.npy'):
+		if 'outmap_COMMANDER_mm' not in globals():
+			outmap_COMMANDER_mm = Tmap_filtered_COMMANDER * lssmap_filtered_mm * maplist.mask * noises['COMMANDER_dndz-%02d_mm' % i]
+		n_out_COMMANDER_dndz_mm[i,:], _ = np.histogram(outmap_COMMANDER_mm[np.where(maplist.mask!=0)], bins=bins_out_normprod_COMMANDER)
+	else:
+		n_out_COMMANDER_dndz_mm[i,:] = np.load('data/cache/histdata_multispec_COMMANDER_mm.npy')[i,:]
 	for key in ('100GHz', '143GHz', '217GHz', '353GHz'):
 		Tcorr = pars.TCMB if key == '100GHz' else 1.
 		noises[key+'_dndz-%02d' % i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=ClTT_filter_freq[key], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz[i,:])
 		noises[key+'_dndz-%02d_mm' % i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=ClTT_filter_freq[key], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz_mm[i,:])
 		for case in ('', '_noSMICA', '_noCOMMANDER', '_thermaldust', '_CIB'):
 			if key == '353GHz':
-				outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['353GHz_dndz-%02d' % i]
-				outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['353GHz_dndz-%02d_mm' % i]
-				recon_Cls[key+case+'_CIBmask_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_freq, lmax=recon_lmax), maplist.fsky_huge)
-				recon_Cls[key+case+'_CIBmask_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_freq_mm, lmax=recon_lmax), maplist.fsky_huge)
+				if not os.path.exists('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d.npy'%i):
+					outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['353GHz_dndz-%02d' % i]
+					recon_Cls[key+case+'_CIBmask_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_freq, lmax=recon_lmax), maplist.fsky_huge)
+				else:
+					recon_Cls[key+case+'_CIBmask_dndz-%02d' % i] = np.load('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d.npy'%i)
+					if 'outmap_freq' in globals():
+						del outmap_freq
+				if not os.path.exists('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d_mm.npy'%  i):
+					outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['353GHz_dndz-%02d_mm' % i]
+					recon_Cls[key+case+'_CIBmask_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_freq_mm, lmax=recon_lmax), maplist.fsky_huge)
+				else:
+					recon_Cls[key+case+'_CIBmask_dndz-%02d_mm' % i] = np.load('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d_mm.npy'%  i)
+					if 'outmap_freq_mm' in globals():
+						del outmap_freq_mm
 				if key+case+'_CIBmask' in histkeys_353:
-					n_out_353hist_dndz[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_353hist)
-					n_out_353hist_dndz_mm[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_353hist)
+					if not os.path.exists('data/cache/histdata_353hist_' + key + '_CIBmask.npy'):
+						if 'outmap_freq' not in globals():
+							outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['353GHz_dndz-%02d' % i]
+						n_out_353hist_dndz[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_353hist)
+					else:
+						n_out_353hist_dndz[key+case+'_CIBmask'][i,:] = np.load('data/cache/histdata_353hist_' + key + '_CIBmask.npy')[i,:]
+					if not os.path.exists('data/cache/histdata_353hist_' + key + '_CIBmask_mm.npy'):
+						if 'outmap_freq_mm' not in globals():
+							outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['353GHz_dndz-%02d_mm' % i]
+						n_out_353hist_dndz_mm[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_353hist)
+					else:
+						n_out_353hist_dndz_mm[key+case+'_CIBmask'][i,:] = np.load('data/cache/histdata_353hist_' + key + '_CIBmask_mm.npy')[i,:]
 				if key+case+'_CIBmask' in histkeys:
-					n_out_dndz[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)
-					n_out_dndz_mm[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)
+					if not os.path.exists('data/cache/histdata_multispec_' + key + '_CIBmask.npy'):
+						if 'outmap_freq' not in globals():
+							outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['353GHz_dndz-%02d' % i]
+						n_out_dndz[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)
+					else:
+						n_out_dndz[key+case+'_CIBmask'][i,:] = np.load('data/cache/histdata_multispec_' + key + '_CIBmask.npy')[i,:]
+					if not os.path.exists('data/cache/histdata_multispec_' + key + '_CIBmask_mm.npy'):
+						if 'outmap_freq_mm' not in globals():
+							outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['353GHz_dndz-%02d_mm' % i]
+						n_out_dndz_mm[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)
+					else:
+						n_out_dndz_mm[key+case+'_CIBmask'][i,:] = np.load('data/cache/histdata_multispec_' + key + '_CIBmask_mm.npy')[i,:]
 			else:
 				if case == '_CIB':
 					continue
-				outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask * noises[key+'_dndz-%02d' % i] / Tcorr
-				outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask * noises[key+'_dndz-%02d_mm' % i] / Tcorr
-				recon_Cls[key+case+'_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_freq, lmax=recon_lmax), maplist.fsky)
-				recon_Cls[key+case+'_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_freq_mm, lmax=recon_lmax), maplist.fsky)
+				if not os.path.exists('data/cache/Cls/' + key + case + '_dndz-%02d.npy' % i):
+					outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask * noises[key+'_dndz-%02d' % i] / Tcorr
+					recon_Cls[key+case+'_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_freq, lmax=recon_lmax), maplist.fsky)
+				else:
+					recon_Cls[key+case+'_dndz-%02d' % i] = np.load('data/cache/Cls/' + key + case + '_dndz-%02d.npy' % i)
+					if 'outmap_freq' in globals():
+						del outmap_freq
+				if not os.path.exists('data/cache/Cls/' + key + case + '_dndz-%02d_mm.npy' % i):
+					outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask * noises[key+'_dndz-%02d_mm' % i] / Tcorr
+					recon_Cls[key+case+'_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_freq_mm, lmax=recon_lmax), maplist.fsky)
+				else:
+					recon_Cls[key+case+'_dndz-%02d_mm' % i] = np.load('data/cache/Cls/' + key + case + '_dndz-%02d_mm.npy' % i)
+					if 'outmap_freq_mm' in globals():
+						del outmap_freq_mm
 				if key+case in histkeys:
-					n_out_dndz[key+case][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask!=0)], bins=bins_freqhist)
-					n_out_dndz_mm[key+case][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask!=0)], bins=bins_freqhist)
+					if not os.path.exists('data/cache/histdata_multispec_' + key + '.npy'):
+						if 'outmap_freq' not in globals():
+							outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask * noises[key+'_dndz-%02d' % i] / Tcorr
+						n_out_dndz[key+case][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask!=0)], bins=bins_freqhist)
+					else:
+						n_out_dndz[key+case][i,:] = np.load('data/cache/histdata_multispec_' + key + '.npy')[i,:]
+					if not os.path.exists('data/cache/histdata_multispec_' + key + '_mm.npy'):
+						if 'outmap_freq_mm' not in globals():
+							outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask * noises[key+'_dndz-%02d_mm' % i] / Tcorr
+						n_out_dndz_mm[key+case][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask!=0)], bins=bins_freqhist)
+					else:
+						n_out_dndz_mm[key+case][i,:] = np.load('data/cache/histdata_multispec_' + key + '_mm.npy')[i,:]
 				if key+case == '217GHz':
-					outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['217GHz_dndz-%02d' % i]
-					outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['217GHz_dndz-%02d_mm' % i]
-					recon_Cls[key+case+'_CIBmask_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_freq, lmax=recon_lmax), maplist.fsky_huge)
-					recon_Cls[key+case+'_CIBmask_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_freq_mm, lmax=recon_lmax), maplist.fsky_huge)
-					n_out_dndz[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)					
-					n_out_dndz_mm[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)					
+					if not os.path.exists('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d.npy'% i):
+						outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['217GHz_dndz-%02d' % i]
+						recon_Cls[key+case+'_CIBmask_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_freq, lmax=recon_lmax), maplist.fsky_huge)
+					else:
+						recon_Cls[key+case+'_CIBmask_dndz-%02d' % i] = np.load('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d.npy'% i)
+						if 'outmap_freq' in globals():
+							del outmap_freq
+					if not os.path.exists('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d_mm.npy'% i):
+						outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['217GHz_dndz-%02d_mm' % i]
+						recon_Cls[key+case+'_CIBmask_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_freq_mm, lmax=recon_lmax), maplist.fsky_huge)
+					else:
+						recon_Cls[key+case+'_CIBmask_dndz-%02d_mm' % i] = np.load('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d_mm.npy'% i)
+						if 'outmap_freq_mm' in globals():
+							del outmap_freq_mm
+					if not os.path.exists('data/cache/histdata_multispec_' + key + '_CIBmask.npy'):
+						if 'outmap_freq' not in globals():
+							outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['217GHz_dndz-%02d' % i]
+						n_out_dndz[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)					
+					else:
+						n_out_dndz[key+case+'_CIBmask'][i,:] = np.load('data/cache/histdata_multispec_' + key + '_CIBmask.npy')[i,:]
+					if not os.path.exists('data/cache/histdata_multispec_' + key + '_CIBmask_mm.npy'):
+						if 'outmap_freq_mm' not in globals():
+							outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['217GHz_dndz-%02d_mm' % i]
+						n_out_dndz_mm[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)					
+					else:
+						n_out_dndz_mm[key+case+'_CIBmask'][i,:] = np.load('data/cache/histdata_multispec_' + key + '_CIBmask_mm.npy')[i,:]
 
 
-for key in [k for k in recon_Cls if '_dndz-' in k]:
-	np.save('data/cache/Cls/' + key, recon_Cls[key])
+# np.save('data/cache/histdata_multispec_COMMANDER', n_out_COMMANDER_dndz)
+# np.save('data/cache/histdata_multispec_COMMANDER_mm', n_out_COMMANDER_dndz_mm)
 
-for key in histkeys:
-	np.save('data/cache/histdata_multispec_'+key, n_out_dndz[key])
-	np.save('data/cache/histdata_multispec_'+key+'_mm', n_out_dndz_mm[key])
+# for key in [k for k in recon_Cls if '_dndz-' in k]:
+# 	np.save('data/cache/Cls/' + key, recon_Cls[key])
 
-for key in histkeys_353:
-	np.save('data/cache/histdata_353hist_'+key, n_out_353hist_dndz[key])
-	np.save('data/cache/histdata_353hist_'+key+'_mm', n_out_353hist_dndz_mm[key])
+# for key in histkeys:
+# 	np.save('data/cache/histdata_multispec_'+key, n_out_dndz[key])
+# 	np.save('data/cache/histdata_multispec_'+key+'_mm', n_out_dndz_mm[key])
+
+# for key in histkeys_353:
+# 	np.save('data/cache/histdata_353hist_'+key, n_out_353hist_dndz[key])
+# 	np.save('data/cache/histdata_353hist_'+key+'_mm', n_out_353hist_dndz_mm[key])
 
 print('    Computing windowed velocity for dN/dz realizations')
 clgg = maplist.Cls['unWISE'].copy()
