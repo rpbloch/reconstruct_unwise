@@ -1,6 +1,3 @@
-#### Get frequency maps to match theory noise which we take as correct
-#### Scale window velocity, your cltaug is just at zbar so it's times that equation thing and W(v) ^2. W(v) is not normalized to 1, normalization is fixed to choice of zbar
-
 import os
 import matplotlib as mpl
 from matplotlib import pyplot as plt
@@ -124,7 +121,7 @@ def combine_alm(dTlm, dlm, mask, ClTT, Clgg, Cltaudg, Noise, lmax, nside_out, co
     Tmap_filtered = hp.alm2map(dTlm_xi, lmax=lmax, nside=nside_out) * mask
     lssmap_filtered = hp.alm2map(dlm_zeta, lmax=lmax, nside=nside_out) * mask
     outmap_filtered = Tmap_filtered*lssmap_filtered
-    outmap = outmap_filtered * Noise * mask
+    outmap = -outmap_filtered * Noise * mask
     if convert_K:  # output map has units of K
         outmap /= 2.725
     return outmap
@@ -383,8 +380,8 @@ centres = lambda BIN : (BIN[:-1]+BIN[1:]) / 2
 bessel = lambda bins, Tmap, lssmap : kn(0, np.abs(centres(bins)) / (np.std(Tmap)*np.std(lssmap)))
 normal_product = lambda bins, Tmap, lssmap : bessel(bins,Tmap,lssmap) / (np.pi * np.std(Tmap) * np.std(lssmap))
 nbin_hist = 1000000
-bins_freqhist = np.linspace(-1000,3000,np.min([nbin_hist, 5000])) / 299792.458
-bins_353hist = np.linspace(-500,6100,np.min([nbin_hist, 5000])) / 299792.458
+bins_freqhist = np.linspace(-3000,1000,np.min([nbin_hist, 5000])) / 299792.458
+bins_353hist = np.linspace(-6100,500,np.min([nbin_hist, 5000])) / 299792.458
 # Recon 1pt plot: reconstruction vs normal product distribution
 n_out_normprod_COMMANDER, bins_out_normprod_COMMANDER = np.histogram(reconstructions['COMMANDER'][np.where(maplist.mask!=0)], bins=nbin_hist)
 normprod_COMMANDERmap_filtered = hp.alm2map(hp.almxfl(maplist.processed_alms['COMMANDER'], np.divide(np.ones_like(maplist.Cls['COMMANDER']), maplist.Cls['COMMANDER'], out=np.zeros_like(maplist.Cls['COMMANDER']), where=np.arange(cltaug_fiducial.size)>=100)), lmax=maplist.lmax, nside=maplist.nside)
@@ -469,14 +466,14 @@ for i in np.arange(100):
 	noises['SMICA_dndz-%02d_mm' % i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=ClTT_filter_SMICA, clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz_mm[i,:])
 	noises['COMMANDER_dndz-%02d_mm' % i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=ClTT_filter_COMMANDER, clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz_mm[i,:])
 	if not os.path.exists('data/cache/Cls/' + 'SMICA_dndz-%02d.npy'% i):
-		outmap_SMICA = Tmap_filtered_SMICA * lssmap_filtered * maplist.mask * noises['SMICA_dndz-%02d' % i]
+		outmap_SMICA = -Tmap_filtered_SMICA * lssmap_filtered * maplist.mask * noises['SMICA_dndz-%02d' % i]
 		recon_Cls['SMICA_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_SMICA, lmax=recon_lmax), maplist.fsky)
 	else:
 		recon_Cls['SMICA_dndz-%02d' % i] = np.load('data/cache/Cls/SMICA_dndz-%02d.npy'%i)
 		if 'outmap_SMICA' in globals():
 			del outmap_SMICA
 	if not os.path.exists('data/cache/Cls/' + 'COMMANDER_dndz-%02d.npy' % i):
-		outmap_COMMANDER = Tmap_filtered_COMMANDER * lssmap_filtered * maplist.mask * noises['COMMANDER_dndz-%02d' % i]
+		outmap_COMMANDER = -Tmap_filtered_COMMANDER * lssmap_filtered * maplist.mask * noises['COMMANDER_dndz-%02d' % i]
 		recon_Cls['COMMANDER_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_COMMANDER, lmax=recon_lmax), maplist.fsky)
 	else:
 		recon_Cls['COMMANDER_dndz-%02d' % i] = np.load('data/cache/Cls/COMMANDER_dndz-%02d.npy'%i)
@@ -484,21 +481,21 @@ for i in np.arange(100):
 			del outmap_COMMANDER
 	if not os.path.exists('data/cache/Cls/' + 'SMICAxCOMMANDER_dndz-%02d.npy' % i):
 		if 'outmap_SMICA' not in globals():
-			outmap_SMICA = Tmap_filtered_SMICA * lssmap_filtered * maplist.mask * noises['SMICA_dndz-%02d' % i]
+			outmap_SMICA = -Tmap_filtered_SMICA * lssmap_filtered * maplist.mask * noises['SMICA_dndz-%02d' % i]
 		if 'outmap_COMMANDER' not in globals():
-			outmap_COMMANDER = Tmap_filtered_COMMANDER * lssmap_filtered * maplist.mask * noises['COMMANDER_dndz-%02d' % i]
+			outmap_COMMANDER = -Tmap_filtered_COMMANDER * lssmap_filtered * maplist.mask * noises['COMMANDER_dndz-%02d' % i]
 		recon_Cls['SMICAxCOMMANDER_dndz-%02d' % i] = hp.alm2cl(hp.map2alm(outmap_SMICA, lmax=recon_lmax), hp.map2alm(outmap_COMMANDER, lmax=recon_lmax)) / maplist.fsky
 	else:
 		recon_Cls['SMICAxCOMMANDER_dndz-%02d' % i] = np.load('data/cache/Cls/SMICAxCOMMANDER_dndz-%02d.npy' % i)
 	if not os.path.exists('data/cache/Cls/' + 'SMICA_dndz-%02d_mm.npy'% i):
-		outmap_SMICA_mm = Tmap_filtered_SMICA * lssmap_filtered_mm * maplist.mask * noises['SMICA_dndz-%02d_mm' % i]
+		outmap_SMICA_mm = -Tmap_filtered_SMICA * lssmap_filtered_mm * maplist.mask * noises['SMICA_dndz-%02d_mm' % i]
 		recon_Cls['SMICA_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_SMICA_mm, lmax=recon_lmax), maplist.fsky)
 	else:
 		recon_Cls['SMICA_dndz-%02d_mm' % i] = np.load('data/cache/Cls/SMICA_dndz-%02d_mm.npy'%i)
 		if 'outmap_SMICA_mm' in globals():
 			del outmap_SMICA_mm
 	if not os.path.exists('data/cache/Cls/' + 'COMMANDER_dndz-%02d_mm.npy' % i):
-		outmap_COMMANDER_mm = Tmap_filtered_COMMANDER * lssmap_filtered_mm * maplist.mask * noises['COMMANDER_dndz-%02d_mm' % i]
+		outmap_COMMANDER_mm = -Tmap_filtered_COMMANDER * lssmap_filtered_mm * maplist.mask * noises['COMMANDER_dndz-%02d_mm' % i]
 		recon_Cls['COMMANDER_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_COMMANDER_mm, lmax=recon_lmax), maplist.fsky)
 	else:
 		recon_Cls['COMMANDER_dndz-%02d_mm' % i] = np.load('data/cache/Cls/COMMANDER_dndz-%02d_mm.npy'%i)
@@ -506,21 +503,21 @@ for i in np.arange(100):
 			del outmap_COMMANDER_mm
 	if not os.path.exists('data/cache/Cls/' + 'SMICAxCOMMANDER_dndz-%02d_mm.npy' % i):
 		if 'outmap_SMICA_mm' not in globals():
-			outmap_SMICA_mm = Tmap_filtered_SMICA * lssmap_filtered_mm * maplist.mask * noises['SMICA_dndz-%02d_mm' % i]
+			outmap_SMICA_mm = -Tmap_filtered_SMICA * lssmap_filtered_mm * maplist.mask * noises['SMICA_dndz-%02d_mm' % i]
 		if 'outmap_COMMANDER_mm' not in globals():
-			outmap_COMMANDER_mm = Tmap_filtered_COMMANDER * lssmap_filtered_mm * maplist.mask * noises['COMMANDER_dndz-%02d_mm' % i]
+			outmap_COMMANDER_mm = -Tmap_filtered_COMMANDER * lssmap_filtered_mm * maplist.mask * noises['COMMANDER_dndz-%02d_mm' % i]
 		recon_Cls['SMICAxCOMMANDER_dndz-%02d_mm' % i] = hp.alm2cl(hp.map2alm(outmap_SMICA_mm, lmax=recon_lmax), hp.map2alm(outmap_COMMANDER_mm, lmax=recon_lmax)) / maplist.fsky
 	else:
 		recon_Cls['SMICAxCOMMANDER_dndz-%02d_mm' % i] = np.load('data/cache/Cls/SMICAxCOMMANDER_dndz-%02d_mm.npy' % i)
 	if not os.path.exists('data/cache/histdata_multispec_COMMANDER.npy'):
 		if 'outmap_COMMANDER' not in globals():
-			outmap_COMMANDER = Tmap_filtered_COMMANDER * lssmap_filtered * maplist.mask * noises['COMMANDER_dndz-%02d' % i]
+			outmap_COMMANDER = -Tmap_filtered_COMMANDER * lssmap_filtered * maplist.mask * noises['COMMANDER_dndz-%02d' % i]
 		n_out_COMMANDER_dndz[i,:], _ = np.histogram(outmap_COMMANDER[np.where(maplist.mask!=0)], bins=bins_out_normprod_COMMANDER)
 	else:
 		n_out_COMMANDER_dndz[i,:] = np.load('data/cache/histdata_multispec_COMMANDER.npy')[i,:]
 	if not os.path.exists('data/cache/histdata_multispec_COMMANDER_mm.npy'):
 		if 'outmap_COMMANDER_mm' not in globals():
-			outmap_COMMANDER_mm = Tmap_filtered_COMMANDER * lssmap_filtered_mm * maplist.mask * noises['COMMANDER_dndz-%02d_mm' % i]
+			outmap_COMMANDER_mm = -Tmap_filtered_COMMANDER * lssmap_filtered_mm * maplist.mask * noises['COMMANDER_dndz-%02d_mm' % i]
 		n_out_COMMANDER_dndz_mm[i,:], _ = np.histogram(outmap_COMMANDER_mm[np.where(maplist.mask!=0)], bins=bins_out_normprod_COMMANDER)
 	else:
 		n_out_COMMANDER_dndz_mm[i,:] = np.load('data/cache/histdata_multispec_COMMANDER_mm.npy')[i,:]
@@ -531,14 +528,14 @@ for i in np.arange(100):
 		for case in ('', '_noSMICA', '_noCOMMANDER', '_thermaldust', '_CIB'):
 			if key == '353GHz':
 				if not os.path.exists('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d.npy'%i):
-					outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['353GHz_dndz-%02d' % i]
+					outmap_freq = -Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['353GHz_dndz-%02d' % i]
 					recon_Cls[key+case+'_CIBmask_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_freq, lmax=recon_lmax), maplist.fsky_huge)
 				else:
 					recon_Cls[key+case+'_CIBmask_dndz-%02d' % i] = np.load('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d.npy'%i)
 					if 'outmap_freq' in globals():
 						del outmap_freq
 				if not os.path.exists('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d_mm.npy'%  i):
-					outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['353GHz_dndz-%02d_mm' % i]
+					outmap_freq_mm = -Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['353GHz_dndz-%02d_mm' % i]
 					recon_Cls[key+case+'_CIBmask_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_freq_mm, lmax=recon_lmax), maplist.fsky_huge)
 				else:
 					recon_Cls[key+case+'_CIBmask_dndz-%02d_mm' % i] = np.load('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d_mm.npy'%  i)
@@ -547,26 +544,26 @@ for i in np.arange(100):
 				if key+case+'_CIBmask' in histkeys_353:
 					if not os.path.exists('data/cache/histdata_353hist_' + key + '_CIBmask.npy'):
 						if 'outmap_freq' not in globals():
-							outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['353GHz_dndz-%02d' % i]
+							outmap_freq = -Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['353GHz_dndz-%02d' % i]
 						n_out_353hist_dndz[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_353hist)
 					else:
 						n_out_353hist_dndz[key+case+'_CIBmask'][i,:] = np.load('data/cache/histdata_353hist_' + key + '_CIBmask.npy')[i,:]
 					if not os.path.exists('data/cache/histdata_353hist_' + key + '_CIBmask_mm.npy'):
 						if 'outmap_freq_mm' not in globals():
-							outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['353GHz_dndz-%02d_mm' % i]
+							outmap_freq_mm = -Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['353GHz_dndz-%02d_mm' % i]
 						n_out_353hist_dndz_mm[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_353hist)
 					else:
 						n_out_353hist_dndz_mm[key+case+'_CIBmask'][i,:] = np.load('data/cache/histdata_353hist_' + key + '_CIBmask_mm.npy')[i,:]
 				if key+case+'_CIBmask' in histkeys:
 					if not os.path.exists('data/cache/histdata_multispec_' + key + '_CIBmask.npy'):
 						if 'outmap_freq' not in globals():
-							outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['353GHz_dndz-%02d' % i]
+							outmap_freq = -Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['353GHz_dndz-%02d' % i]
 						n_out_dndz[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)
 					else:
 						n_out_dndz[key+case+'_CIBmask'][i,:] = np.load('data/cache/histdata_multispec_' + key + '_CIBmask.npy')[i,:]
 					if not os.path.exists('data/cache/histdata_multispec_' + key + '_CIBmask_mm.npy'):
 						if 'outmap_freq_mm' not in globals():
-							outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['353GHz_dndz-%02d_mm' % i]
+							outmap_freq_mm = -Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['353GHz_dndz-%02d_mm' % i]
 						n_out_dndz_mm[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)
 					else:
 						n_out_dndz_mm[key+case+'_CIBmask'][i,:] = np.load('data/cache/histdata_multispec_' + key + '_CIBmask_mm.npy')[i,:]
@@ -574,14 +571,14 @@ for i in np.arange(100):
 				if case == '_CIB':
 					continue
 				if not os.path.exists('data/cache/Cls/' + key + case + '_dndz-%02d.npy' % i):
-					outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask * noises[key+'_dndz-%02d' % i] / Tcorr
+					outmap_freq = -Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask * noises[key+'_dndz-%02d' % i] / Tcorr
 					recon_Cls[key+case+'_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_freq, lmax=recon_lmax), maplist.fsky)
 				else:
 					recon_Cls[key+case+'_dndz-%02d' % i] = np.load('data/cache/Cls/' + key + case + '_dndz-%02d.npy' % i)
 					if 'outmap_freq' in globals():
 						del outmap_freq
 				if not os.path.exists('data/cache/Cls/' + key + case + '_dndz-%02d_mm.npy' % i):
-					outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask * noises[key+'_dndz-%02d_mm' % i] / Tcorr
+					outmap_freq_mm = -Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask * noises[key+'_dndz-%02d_mm' % i] / Tcorr
 					recon_Cls[key+case+'_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_freq_mm, lmax=recon_lmax), maplist.fsky)
 				else:
 					recon_Cls[key+case+'_dndz-%02d_mm' % i] = np.load('data/cache/Cls/' + key + case + '_dndz-%02d_mm.npy' % i)
@@ -590,26 +587,26 @@ for i in np.arange(100):
 				if key+case in histkeys:
 					if not os.path.exists('data/cache/histdata_multispec_' + key + '.npy'):
 						if 'outmap_freq' not in globals():
-							outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask * noises[key+'_dndz-%02d' % i] / Tcorr
+							outmap_freq = -Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask * noises[key+'_dndz-%02d' % i] / Tcorr
 						n_out_dndz[key+case][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask!=0)], bins=bins_freqhist)
 					else:
 						n_out_dndz[key+case][i,:] = np.load('data/cache/histdata_multispec_' + key + '.npy')[i,:]
 					if not os.path.exists('data/cache/histdata_multispec_' + key + '_mm.npy'):
 						if 'outmap_freq_mm' not in globals():
-							outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask * noises[key+'_dndz-%02d_mm' % i] / Tcorr
+							outmap_freq_mm = -Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask * noises[key+'_dndz-%02d_mm' % i] / Tcorr
 						n_out_dndz_mm[key+case][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask!=0)], bins=bins_freqhist)
 					else:
 						n_out_dndz_mm[key+case][i,:] = np.load('data/cache/histdata_multispec_' + key + '_mm.npy')[i,:]
 				if key+case == '217GHz':
 					if not os.path.exists('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d.npy'% i):
-						outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['217GHz_dndz-%02d' % i]
+						outmap_freq = -Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['217GHz_dndz-%02d' % i]
 						recon_Cls[key+case+'_CIBmask_dndz-%02d' % i] = maplist.alm2cl(hp.map2alm(outmap_freq, lmax=recon_lmax), maplist.fsky_huge)
 					else:
 						recon_Cls[key+case+'_CIBmask_dndz-%02d' % i] = np.load('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d.npy'% i)
 						if 'outmap_freq' in globals():
 							del outmap_freq
 					if not os.path.exists('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d_mm.npy'% i):
-						outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['217GHz_dndz-%02d_mm' % i]
+						outmap_freq_mm = -Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['217GHz_dndz-%02d_mm' % i]
 						recon_Cls[key+case+'_CIBmask_dndz-%02d_mm' % i] = maplist.alm2cl(hp.map2alm(outmap_freq_mm, lmax=recon_lmax), maplist.fsky_huge)
 					else:
 						recon_Cls[key+case+'_CIBmask_dndz-%02d_mm' % i] = np.load('data/cache/Cls/' + key + case + '_CIBmask_dndz-%02d_mm.npy'% i)
@@ -617,13 +614,13 @@ for i in np.arange(100):
 							del outmap_freq_mm
 					if not os.path.exists('data/cache/histdata_multispec_' + key + '_CIBmask.npy'):
 						if 'outmap_freq' not in globals():
-							outmap_freq = Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['217GHz_dndz-%02d' % i]
+							outmap_freq = -Tmap_filtered_freq[key+case] * lssmap_filtered * maplist.mask_huge * noises['217GHz_dndz-%02d' % i]
 						n_out_dndz[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)					
 					else:
 						n_out_dndz[key+case+'_CIBmask'][i,:] = np.load('data/cache/histdata_multispec_' + key + '_CIBmask.npy')[i,:]
 					if not os.path.exists('data/cache/histdata_multispec_' + key + '_CIBmask_mm.npy'):
 						if 'outmap_freq_mm' not in globals():
-							outmap_freq_mm = Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['217GHz_dndz-%02d_mm' % i]
+							outmap_freq_mm = -Tmap_filtered_freq[key+case] * lssmap_filtered_mm * maplist.mask_huge * noises['217GHz_dndz-%02d_mm' % i]
 						n_out_dndz_mm[key+case+'_CIBmask'][i,:], _ = np.histogram(maplist.lowpass_filter(outmap_freq_mm, lmax=25)[np.where(maplist.mask_huge!=0)], bins=bins_freqhist)					
 					else:
 						n_out_dndz_mm[key+case+'_CIBmask'][i,:] = np.load('data/cache/histdata_multispec_' + key + '_CIBmask_mm.npy')[i,:]
@@ -704,7 +701,7 @@ for key in ('COMMANDER', '100GHz', '143GHz', '217GHz', '353GHz'):
 		ClTT_filter = maplist.Cls[key].copy()[:maplist.lmax+1]
 		ClTT_filter[:100] = 1e15
 		Tmap_filtered = hp.alm2map(hp.almxfl(Tlms, np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
-		outmap_noiserecon = Tmap_filtered * lssmap_filtered * maplist.mask * noises[key] / Tcorr
+		outmap_noiserecon = -Tmap_filtered * lssmap_filtered * maplist.mask * noises[key] / Tcorr
 		statistical_Cls[key][i,:] = hp.anafast((vmap + outmap_noiserecon) * maplist.mask, lmax=velocity_compute_ells.max()) / maplist.fsky
 		np.save('data/cache/Cls/stat/stat_v_plus_n_'+key+'_%03d'%i, statistical_Cls[key][i,:])
 		if (i % 100 == 0) and (i > 0):
@@ -729,7 +726,7 @@ for key in ('COMMANDER', '100GHz', '143GHz', '217GHz', '353GHz'):
 		ClTT_filter = maplist.Cls[key].copy()[:maplist.lmax+1]
 		ClTT_filter[:100] = 1e15
 		Tmap_filtered = hp.alm2map(hp.almxfl(Tlms, np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
-		outmap_noiserecon = Tmap_filtered * lssmap_filtered * maplist.mask * noises[key+'_mm'] / Tcorr
+		outmap_noiserecon = -Tmap_filtered * lssmap_filtered * maplist.mask * noises[key+'_mm'] / Tcorr
 		statistical_Cls_mm[key][i,:] = hp.anafast((vmap + outmap_noiserecon) * maplist.mask, lmax=velocity_compute_ells.max()) / maplist.fsky
 		np.save('data/cache/Cls/stat/stat_v_plus_n_mm_'+key+'_%03d'%i, statistical_Cls_mm[key][i,:])
 		if (i % 100 == 0) and (i > 0):
@@ -790,12 +787,66 @@ for key in ('SMICA', 'COMMANDER', 'SMICAxCOMMANDER', '100GHz', '143GHz', '217GHz
 	for vcase in ('v_dndz_max', 'v_dndz_min', 'v_total_max', 'v_total_min'):
 		errors[vcase+key] = interp1d(velocity_compute_ells, errors[vcase+key], bounds_error=False, fill_value=0.)(np.arange(velocity_compute_ells.max()+1))
 
-
+# Plot-related variables: v_interp for shorthand, and plot/mask value assignments for recon_out plot
 v_COMMANDER_interp = interp1d(velocity_compute_ells,clv_windowed['COMMANDER']+noises['COMMANDER'],bounds_error=False,fill_value=0.)(np.arange(velocity_compute_ells.max()+1))
 v_100GHz_interp = interp1d(velocity_compute_ells,clv_windowed['100GHz']+(noises['100GHz']/pars.TCMB**2),bounds_error=False,fill_value=0.)(np.arange(velocity_compute_ells.max()+1))
 v_143GHz_interp = interp1d(velocity_compute_ells,clv_windowed['143GHz']+noises['143GHz'],bounds_error=False,fill_value=0.)(np.arange(velocity_compute_ells.max()+1))
 v_217GHz_interp = interp1d(velocity_compute_ells,clv_windowed['217GHz']+noises['217GHz'],bounds_error=False,fill_value=0.)(np.arange(velocity_compute_ells.max()+1))
 v_353GHz_interp = interp1d(velocity_compute_ells,clv_windowed['353GHz']+noises['353GHz'],bounds_error=False,fill_value=0.)(np.arange(velocity_compute_ells.max()+1))
+
+reconplot_minval = np.min([(maplist.stored_maps['recon_SMICA']*maplist.mask).min(),(maplist.stored_maps['recon_COMMANDER']*maplist.mask).min()])
+reconplot_maxval = np.max([(maplist.stored_maps['recon_SMICA']*maplist.mask).max(),(maplist.stored_maps['recon_COMMANDER']*maplist.mask).max()])
+plotmask = maplist.mask.copy()
+plotmask[np.where(maplist.mask==0)] = np.nan
+
+print('Computing dipoles')
+n_dipole_iter = 1000
+Clgg_filter = maplist.Cls['unWISE'].copy()[:maplist.lmax+1]
+Clgg_filter[:100] = 1e15
+inverse_fiducial_mask = -(maplist.mask-1)
+for case in ('COMMANDER','SMICA','100GHz', '143GHz', '217GHz'):
+	Tcorr = pars.TCMB if case == '100GHz' else 1
+	ClTT_filter = maplist.Cls[case].copy()[:maplist.lmax+1]
+	ClTT_filter[:100] = 1e15
+	print('    case: ' + case)
+	for i in np.arange(n_dipole_iter):
+		if (i % 100 == 0) and (i > 0):
+			print('        Completed %d of %d' % (i, n_dipole_iter))
+		if os.path.exists('data/cache/stat/dipole/dipole_fiducial_%s_%03d.npy'%(case,i)):
+			continue
+		Tlms = hp.synalm(maplist.Cls[case], lmax=maplist.lmax)
+		lsslms = hp.synalm(maplist.Cls['unWISE'], lmax=maplist.lmax)
+		Tmap_filtered = hp.alm2map(hp.almxfl(Tlms, np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
+		lssmap_filtered = hp.alm2map(hp.almxfl(lsslms, np.divide(cltaug_fiducial, Clgg_filter, out=np.zeros_like(Clgg_filter), where=Clgg_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
+		outmap_noiserecon = -Tmap_filtered * lssmap_filtered * inverse_fiducial_mask * noises[case]
+		recon_inpainted = reconstructions[case] + outmap_noiserecon
+		dipole_alms = hp.almxfl(hp.map2alm(recon_inpainted,lmax=1),[0,1])
+		np.save('data/cache/stat/dipole/dipole_fiducial_%s_%03d.npy'%(case,i), dipole_alms)
+
+dipole_alms = {key : np.zeros((n_dipole_iter, 3), dtype=np.complex128) for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}
+for case in ('COMMANDER','SMICA','100GHz', '143GHz', '217GHz'):
+	for i in np.arange(n_dipole_iter):
+		dipole_alms[case][i,:] = np.load('data/cache/stat/dipole/dipole_fiducial_%s_%03d.npy'%(case,i))
+
+measured_dipoles = {key : np.mean(dipole_alms[key], axis=0) for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}
+mean_dipole = {key : hp.fit_dipole(hp.alm2map(measured_dipoles[key],nside=2,lmax=1))[1] for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}
+dipoles = {key : np.zeros((n_dipole_iter, 3)) for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}
+for case in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']:
+	for i in np.arange(n_dipole_iter):
+		dipoles[case][i,:] = hp.fit_dipole(hp.alm2map(dipole_alms[case][i,:],nside=2,lmax=1))[1]
+
+monopole_maps = {key : hp.fit_dipole((np.repeat(np.mean(reconstructions[key][np.where(maplist.mask!=0)]), hp.nside2npix(maplist.nside))) * maplist.mask)[1] for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}
+
+lat_mean = {key : hp.vec2ang(mean_dipole[key])[0][0] for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}
+lon_mean = {key : hp.vec2ang(mean_dipole[key])[1][0] for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}
+lat_check = {key : hp.vec2ang(dipoles[key])[0] for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}
+lon_check = {key : hp.vec2ang(dipoles[key])[1] for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}
+
+dipole_angseps = {key : np.arccos(np.sin(lat_mean[key])*np.sin(lat_check[key]) + np.cos(lat_mean[key])*np.cos(lat_check[key])*np.cos(lon_mean[key]-lon_check[key])) for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}
+# Plot a circle at z=0. Then use rot keyword to rotate.
+thetas   = {key : np.degrees(np.std(dipole_angseps[key]))*np.sin(np.linspace(0,2*np.pi,100)) for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}  # lat
+phis = {key : np.degrees(np.std(dipole_angseps[key]))*np.cos(np.linspace(0,2*np.pi,100)) for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}  # lon
+
 
 ### Plotting
 # Common functions
@@ -803,18 +854,17 @@ bandpowers = lambda spectrum : np.array([spectrum[2:][1+(5*i):1+(5*(i+1))].mean(
 bandpowers_errbar = lambda spectrum : np.array([np.array([spectrum[j][2:][1+(5*i):1+(5*(i+1))].mean() for i in np.arange(spectrum[j].size//5)]) for j in np.arange(len(spectrum))])
 pixel_scaling_masked = lambda distribution, FSKY : (12*2048**2) * FSKY * (distribution / simps(distribution))
 c = mpl.colors.ListedColormap(['darkred', 'gold'])
+cmap_dipole = mpl.colors.ListedColormap(['#AFAFAF', '#EEEEEE'])
 x_ells = bandpowers(np.arange(recon_lmax+3))
 linecolors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 darken = lambda color, amount :  colorsys.hls_to_rgb(colorsys.rgb_to_hls(*mc.to_rgb(color))[0], 1 - amount * (1 - colorsys.rgb_to_hls(*mc.to_rgb(color))[1]), colorsys.rgb_to_hls(*mc.to_rgb(color))[2])
 
 ## Fiducial reconstruction maps: needs to be cropped by 3rd party program, hp.mollview is uncooperative with matplotlib formatting for whitespace.
-reconplot_minval = np.min([(maplist.stored_maps['recon_SMICA']*maplist.mask).min(),(maplist.stored_maps['recon_COMMANDER']*maplist.mask).min()])
-reconplot_maxval = np.max([(maplist.stored_maps['recon_SMICA']*maplist.mask).max(),(maplist.stored_maps['recon_COMMANDER']*maplist.mask).max()])
 fig, (ax1, ax2) = plt.subplots(2,1,figsize=(10,15))
 plt.axes(ax1)
-hp.mollview(maplist.stored_maps['recon_SMICA']*maplist.mask, title=r'SMICA x unWISE Reconstruction $\left(\ell_{\mathrm{max}}\leq 25\right)$', unit=r'$\frac{v}{c}$', min=reconplot_minval, max=reconplot_maxval, hold=True)
+hp.mollview(maplist.stored_maps['recon_SMICA']*plotmask, title=r'SMICA x unWISE Reconstruction $\left(\ell_{\mathrm{max}}\leq 25\right)$', unit=r'$\frac{v}{c}$', min=reconplot_minval, max=reconplot_maxval, hold=True)
 plt.axes(ax2)
-hp.mollview(maplist.stored_maps['recon_COMMANDER']*maplist.mask, title=r'COMMANDER x unWISE Reconstruction $\left(\ell_{\mathrm{max}}\leq 25\right)$',unit=r'$\frac{v}{c}$', min=reconplot_minval, max=reconplot_maxval, hold=True)
+hp.mollview(maplist.stored_maps['recon_COMMANDER']*plotmask, title=r'COMMANDER x unWISE Reconstruction $\left(\ell_{\mathrm{max}}\leq 25\right)$',unit=r'$\frac{v}{c}$', min=reconplot_minval, max=reconplot_maxval, hold=True)
 plt.tight_layout()
 plt.savefig(outdir+'recon_outputs')
 
@@ -840,11 +890,13 @@ plt.savefig(outdir+'signal_noise_gauss.png')
 # 2pt frequency statistics for 100, 143, 217 GHz with fiducial mask
 fig, (ax100, ax143, ax217) = plt.subplots(1,3,figsize=(18,6))
 for freq, ax in zip([100, 143, 217], [ax100, ax143, ax217]):
+	Tcorr = pars.TCMB**2 if freq == 100 else 1.
 	v_freq = {100 : v_100GHz_interp, 143 : v_143GHz_interp, 217 : v_217GHz_interp}[freq]
 	ax.errorbar(x_ells, bandpowers(recon_Cls['%dGHz' % freq]), label='%d GHz x unWISE' % freq, yerr=bandpowers_errbar(errors['%dGHz' % freq]), capsize=3, ls='None', marker='x', zorder=100, color=linecolors[0])
 	ax.errorbar(x_ells, bandpowers(recon_Cls['%dGHz_noSMICA' % freq]), label='%d GHz - SMICA x unWISE' % freq, yerr=bandpowers_errbar(errors['%dGHz_noSMICA' % freq]), capsize=3, ls='None', marker='x', zorder=100, color=linecolors[2])
 	ax.errorbar(x_ells, bandpowers(recon_Cls['%dGHz_noCOMMANDER' % freq]), label='%d GHz - COMMANDER x unWISE' % freq, yerr=bandpowers_errbar(errors['%dGHz_noCOMMANDER' % freq]), capsize=3, ls='None', marker='x', zorder=100, color=linecolors[3])
 	ax.errorbar(x_ells, bandpowers(recon_Cls['%dGHz_thermaldust' % freq]), label='Thermal dust x unWISE', yerr=bandpowers_errbar(errors['%dGHz_thermaldust' % freq]), capsize=3, ls='None', marker='x', zorder=100, color=linecolors[4])
+	ax.semilogy(np.arange(100), np.repeat(noises['%dGHz'%freq],100)/Tcorr, c='k', label='Theory Noise', ls='--', zorder=10, lw=2)
 	ax.semilogy(np.arange(velocity_compute_ells.max()+1), v_freq, color=darken(linecolors[1],1.2), lw=2, label='Windowed velocity + noise')
 	ax.fill_between(np.arange(velocity_compute_ells.max()+1), errors['v_dndz_min%dGHz'%freq], errors['v_dndz_max%dGHz'%freq], color=linecolors[1], alpha=0.75)
 	ax.fill_between(np.arange(velocity_compute_ells.max()+1), errors['v_total_min%dGHz'%freq], errors['v_total_max%dGHz'%freq], color=linecolors[1], alpha=0.35)
@@ -853,10 +905,9 @@ for freq, ax in zip([100, 143, 217], [ax100, ax143, ax217]):
 	ax.set_xlabel(r'$\ell$')
 	ax.set_ylabel(r'$\frac{v^2}{c^2}$',rotation=0,fontsize=16)
 ymin = ax100.get_ylim()[0]
-ymax = ax217.get_ylim()[1]
 for ax in (ax100, ax143, ax217):
-	ax.set_ylim([ymin, 1e-6])
-	order = [1,2,3,4,0]
+	ax.set_ylim([ymin, 1.8e-6])
+	order = [2,3,4,5,1,0]
 	handles, labels = ax.get_legend_handles_labels()
 	ax.legend([handles[idx] for idx in order],[labels[idx] for idx in order])
 plt.tight_layout()
@@ -957,7 +1008,7 @@ ax_inset.set_xticks([0.,-.06,.06],['0','-0.06','0.06'])
 ax_inset.set_title('% difference',fontsize=10)
 plt.ylim([0, 5.2]) 
 plt.xlim([-.075,.075])
-plt.xlabel(r'$\frac{\Delta T}{T}$', fontsize=16)
+plt.xlabel(r'$\frac{v}{c}$', fontsize=16)
 plt.ylabel(r'$N_{\mathrm{pix}}\ \left[\times 10^3\right]$')
 plt.title('Planck x unWISE pixel value distribution')
 plt.legend()
@@ -966,37 +1017,37 @@ plt.savefig(outdir+'recon_1pt')
 
 # 1pt statistics across multiple frequencies and masks
 plt.figure()
-l1, = plt.plot(centres(bins_freqhist)*299792.458, n_out_100/simps(n_out_100), label='100 GHz', zorder=95)
-l2, = plt.plot(centres(bins_freqhist)*299792.458, n_out_143/simps(n_out_143), label='143 GHz', zorder=96)
-l3, = plt.plot(centres(bins_freqhist)*299792.458, n_out_217/simps(n_out_217), label='217 GHz (fiducial mask)', zorder=97)
-l4, = plt.plot(centres(bins_freqhist)*299792.458, n_out_217_huge/simps(n_out_217_huge), label='217 GHz (large mask)', zorder=98)
-l5, = plt.plot(centres(bins_freqhist)*299792.458, n_out_353_huge/simps(n_out_353_huge), label='353 GHz (large mask)', zorder=99)
-plt.fill_between(centres(bins_freqhist)*299792.458, np.min(n_out_dndz['100GHz'],axis=0)/simps(n_out_100), np.max(n_out_dndz['100GHz'],axis=0)/simps(n_out_100), alpha=0.5, color=l1.get_c(), lw=0.)
-plt.fill_between(centres(bins_freqhist)*299792.458, np.min(n_out_dndz['143GHz'],axis=0)/simps(n_out_143), np.max(n_out_dndz['143GHz'],axis=0)/simps(n_out_143), alpha=0.5, color=l2.get_c(), lw=0.)
-plt.fill_between(centres(bins_freqhist)*299792.458, np.min(n_out_dndz['217GHz'],axis=0)/simps(n_out_217), np.max(n_out_dndz['217GHz'],axis=0)/simps(n_out_217), alpha=0.5, color=l3.get_c(), lw=0.)
-plt.fill_between(centres(bins_freqhist)*299792.458, np.min(n_out_dndz['217GHz_CIBmask'],axis=0)/simps(n_out_217_huge), np.max(n_out_dndz['217GHz_CIBmask'],axis=0)/simps(n_out_217_huge), alpha=0.5, color=l4.get_c(), lw=0.)
-plt.fill_between(centres(bins_freqhist)*299792.458, np.min(n_out_dndz['353GHz_CIBmask'],axis=0)/simps(n_out_353_huge), np.max(n_out_dndz['353GHz_CIBmask'],axis=0)/simps(n_out_353_huge), alpha=0.5, color=l5.get_c(), lw=0.)
+l1, = plt.plot(centres(bins_freqhist), n_out_100/simps(n_out_100), label='100 GHz', zorder=95)
+l2, = plt.plot(centres(bins_freqhist), n_out_143/simps(n_out_143), label='143 GHz', zorder=96)
+l3, = plt.plot(centres(bins_freqhist), n_out_217/simps(n_out_217), label='217 GHz (fiducial mask)', zorder=97)
+l4, = plt.plot(centres(bins_freqhist), n_out_217_huge/simps(n_out_217_huge), label='217 GHz (large mask)', zorder=98)
+l5, = plt.plot(centres(bins_freqhist), n_out_353_huge/simps(n_out_353_huge), label='353 GHz (large mask)', zorder=99)
+plt.fill_between(centres(bins_freqhist), np.min(n_out_dndz['100GHz'],axis=0)/simps(n_out_100), np.max(n_out_dndz['100GHz'],axis=0)/simps(n_out_100), alpha=0.5, color=l1.get_c(), lw=0.)
+plt.fill_between(centres(bins_freqhist), np.min(n_out_dndz['143GHz'],axis=0)/simps(n_out_143), np.max(n_out_dndz['143GHz'],axis=0)/simps(n_out_143), alpha=0.5, color=l2.get_c(), lw=0.)
+plt.fill_between(centres(bins_freqhist), np.min(n_out_dndz['217GHz'],axis=0)/simps(n_out_217), np.max(n_out_dndz['217GHz'],axis=0)/simps(n_out_217), alpha=0.5, color=l3.get_c(), lw=0.)
+plt.fill_between(centres(bins_freqhist), np.min(n_out_dndz['217GHz_CIBmask'],axis=0)/simps(n_out_217_huge), np.max(n_out_dndz['217GHz_CIBmask'],axis=0)/simps(n_out_217_huge), alpha=0.5, color=l4.get_c(), lw=0.)
+plt.fill_between(centres(bins_freqhist), np.min(n_out_dndz['353GHz_CIBmask'],axis=0)/simps(n_out_353_huge), np.max(n_out_dndz['353GHz_CIBmask'],axis=0)/simps(n_out_353_huge), alpha=0.5, color=l5.get_c(), lw=0.)
 plt.ylim([0.00001,plt.ylim()[1]*0.85])
-plt.xlabel('km/s')
+plt.xlabel(r'$\frac{v}{c}$', fontsize=16)
 plt.ylabel(r'Normalized $\mathrm{N}_{\mathrm{pix}}$')
 plt.title('Frequency map reconstruction pixel values')
-plt.xlim([-1000,3000])
+plt.xlim([-3000/299792.458,1000/299792.458])
 plt.legend()
 plt.tight_layout()
 plt.savefig(outdir+'1ptdrift')
 
 # 1pt statistics for 353 GHz for different foregrounds
 plt.figure()
-plt.plot(centres(bins_353hist)*299792.458, n_out_353_353hist/simps(n_out_353_353hist), label='353 GHz x unWISE', zorder=97)
-plt.plot(centres(bins_353hist)*299792.458, n_out_353_noSMICA/simps(n_out_353_noSMICA), label='353 GHz - SMICA x unWISE', zorder=95)
-plt.plot(centres(bins_353hist)*299792.458, n_out_353_noCOMMANDER/simps(n_out_353_noCOMMANDER), label='353 GHz - COMMANDER x unWISE', zorder=96)
-plt.plot(centres(bins_353hist)*299792.458, n_out_353_thermaldust/simps(n_out_353_thermaldust), label='Thermal dust x unWISE', zorder=99)
-plt.plot(centres(bins_353hist)*299792.458, n_out_353_CIB/simps(n_out_353_CIB), label='CIB x unWISE', zorder=98)
+plt.plot(centres(bins_353hist), n_out_353_353hist/simps(n_out_353_353hist), label='353 GHz x unWISE', zorder=97)
+plt.plot(centres(bins_353hist), n_out_353_noSMICA/simps(n_out_353_noSMICA), label='353 GHz - SMICA x unWISE', zorder=95)
+plt.plot(centres(bins_353hist), n_out_353_noCOMMANDER/simps(n_out_353_noCOMMANDER), label='353 GHz - COMMANDER x unWISE', zorder=96)
+plt.plot(centres(bins_353hist), n_out_353_thermaldust/simps(n_out_353_thermaldust), label='Thermal dust x unWISE', zorder=99)
+plt.plot(centres(bins_353hist), n_out_353_CIB/simps(n_out_353_CIB), label='CIB x unWISE', zorder=98)
 plt.ylim([0.00001, plt.ylim()[1]*.98])
-plt.xlabel('km/s')
+plt.xlabel(r'$\frac{v}{c}$', fontsize=16)
 plt.ylabel(r'Normalized $\mathrm{N}_{\mathrm{pix}}$')
 plt.title('353 GHz large-masked reconstruction pixel values   ')
-plt.xlim([bins_353hist.min()*299792.458,bins_353hist.max()*299792.458])
+plt.xlim([bins_353hist.min(),bins_353hist.max()])
 plt.legend()
 plt.tight_layout()
 plt.savefig(outdir+'hist_353')
@@ -1013,6 +1064,169 @@ plt.xlim([2,4000])
 plt.legend()
 plt.savefig(outdir+'Pme')
 
+# Dipole
+plt.figure()
+hp.mollview(np.where(np.arange(plotmask.size) < 20000, 0, 1),norm='hist',coord='G',notext=True,cbar=None,cmap=cmap_dipole,title='Planck x unWISE reconstruction dipole')  # Base map
+hp.projplot(thetas['SMICA'],phis['SMICA'],'-',lw=5,color='g',lonlat=True,rot=(np.degrees(lon_mean['SMICA']),181.15-np.degrees(lat_mean['SMICA']),0))   # rotate: south pole counts as 0 latitude for rot keyword
+plt.savefig(outdir+'dipole_Planck_circle')
+
+plt.figure()
+hp.mollview(np.nan_to_num(plotmask),norm='hist',coord='G',notext=True,cbar=None,cmap=cmap_dipole,title='Planck x unWISE reconstruction dipole')  # Base map
+hp.projplot(hp.vec2ang(mean_dipole['COMMANDER']),'bx',ms=12,mew=4,zorder=100)  # Mean dipole point
+hp.projplot(hp.vec2ang(mean_dipole['SMICA']),'gx',ms=12,mew=4,zorder=100)  # Mean dipole point
+hp.projplot(hp.vec2ang(mean_dipole['100GHz']),'mx',ms=12,mew=4,zorder=100)  # Mean dipole point
+hp.projplot(263.99-360, 48.26, 'ro', lonlat=True,ms=12)  # Primary CMB dipole
+hp.projplot(263.99-360+180, -48.26, 'ro', lonlat=True,ms=12)  # Primary CMB dipole antipode
+hp.projtext(263.99-360, 48.26, r' $+\beta$', lonlat=True, color='r',fontsize=21,va='top',weight='extra bold')  # Primary CMB dipole text label
+hp.projtext(263.99-360+180, -48.26, r' $-\beta$', lonlat=True, color='r',fontsize=21,va='bottom',weight='extra bold')  # Primary CMB dipole antipode text label
+hp.projplot(np.repeat(np.pi/2,100),np.linspace(0,2*np.pi,100),c='#DFDF00',coord='E',lw=5)  # Ecliptic line
+hp.projplot(thetas['COMMANDER'],phis['COMMANDER'],'-',lw=5,color='b',lonlat=True,rot=(np.degrees(lon_mean['COMMANDER']),180-np.degrees(lat_mean['COMMANDER']),0))   # rotate: south pole counts as 0 latitude for rot keyword
+#hp.projplot(thetas['SMICA'][:44],phis['SMICA'][:44],'-',lw=5,color='g',lonlat=True,rot=(np.degrees(lon_mean['SMICA']),180-np.degrees(lat_mean['SMICA']),0))   # rotate: south pole counts as 0 latitude for rot keyword
+#hp.projplot(thetas['SMICA'][54:],phis['SMICA'][54:],'-',lw=5,color='g',lonlat=True,rot=(np.degrees(lon_mean['SMICA']),180-np.degrees(lat_mean['SMICA']),0))   # rotate: south pole counts as 0 latitude for rot keyword
+hp.projplot(thetas['SMICA'],phis['SMICA'],'-',lw=5,color='g',lonlat=True,rot=(np.degrees(lon_mean['SMICA']),181.15-np.degrees(lat_mean['SMICA']),0))   # rotate: south pole counts as 0 latitude for rot keyword
+hp.projplot(thetas['100GHz'],phis['100GHz'],'-',lw=5,color='m',lonlat=True,rot=(np.degrees(lon_mean['100GHz']),180-np.degrees(lat_mean['100GHz']),0))   # rotate: south pole counts as 0 latitude for rot keyword
+for i in np.arange(1000):
+	print(i)
+	_ = hp.projplot(hp.vec2ang(dipoles['COMMANDER'][i,:])[0][0],hp.vec2ang(dipoles['COMMANDER'][i,:])[1][0], 'bx',ms=8,mew=.5,zorder=101,alpha=0.5)
+	_ = hp.projplot(hp.vec2ang(dipoles['SMICA'][i,:])[0][0],hp.vec2ang(dipoles['SMICA'][i,:])[1][0], 'gx',ms=8,mew=.5,zorder=101,alpha=0.5)
+	_ = hp.projplot(hp.vec2ang(dipoles['100GHz'][i,:])[0][0],hp.vec2ang(dipoles['100GHz'][i,:])[1][0], 'mx',ms=8,mew=.5,zorder=101,alpha=0.5)
+
+plt.savefig(outdir+'dipole_Planck_nocircle')
+
+
+
+
+
+
+
+
+
+
+plt.figure()
+hp.mollview(np.nan_to_num(plotmask),norm='hist',coord='G',notext=True,cbar=None,cmap=cmap_dipole,title='Planck x unWISE reconstruction dipole')  # Base map
+hp.projplot(hp.vec2ang(mean_dipole['COMMANDER']),'bx',ms=12,mew=4,zorder=100)  # Mean dipole point
+hp.projplot(hp.vec2ang(mean_dipole['SMICA']),'gx',ms=12,mew=4,zorder=100)  # Mean dipole point
+hp.projplot(hp.vec2ang(mean_dipole['100GHz']),'mx',ms=12,mew=4,zorder=100)  # Mean dipole point
+hp.projplot(263.99-360, 48.26, 'ro', lonlat=True,ms=12)  # Primary CMB dipole
+hp.projplot(263.99-360+180, -48.26, 'ro', lonlat=True,ms=12)  # Primary CMB dipole antipode
+hp.projtext(263.99-360, 48.26, r' $+\beta$', lonlat=True, color='r',fontsize=21,va='top',weight='extra bold')  # Primary CMB dipole text label
+hp.projtext(263.99-360+180, -48.26, r' $-\beta$', lonlat=True, color='r',fontsize=21,va='bottom',weight='extra bold')  # Primary CMB dipole antipode text label
+hp.projplot(np.repeat(np.pi/2,100),np.linspace(0,2*np.pi,100),c='#DFDF00',coord='E',lw=5)  # Ecliptic line
+hp.projplot(thetas['COMMANDER'],phis['COMMANDER'],'-',lw=5,color='b',lonlat=True,rot=(np.degrees(lon_mean['COMMANDER']),180-np.degrees(lat_mean['COMMANDER']),0))   # rotate: south pole counts as 0 latitude for rot keyword
+#hp.projplot(thetas['SMICA'][:44],phis['SMICA'][:44],'-',lw=5,color='g',lonlat=True,rot=(np.degrees(lon_mean['SMICA']),180-np.degrees(lat_mean['SMICA']),0))   # rotate: south pole counts as 0 latitude for rot keyword
+#hp.projplot(thetas['SMICA'][54:],phis['SMICA'][54:],'-',lw=5,color='g',lonlat=True,rot=(np.degrees(lon_mean['SMICA']),180-np.degrees(lat_mean['SMICA']),0))   # rotate: south pole counts as 0 latitude for rot keyword
+hp.projplot(thetas['SMICA'],phis['SMICA'],'-',lw=5,color='g',lonlat=True,rot=(np.degrees(lon_mean['SMICA']),181.15-np.degrees(lat_mean['SMICA']),0))   # rotate: south pole counts as 0 latitude for rot keyword
+hp.projplot(thetas['100GHz'],phis['100GHz'],'-',lw=5,color='m',lonlat=True,rot=(np.degrees(lon_mean['100GHz']),180-np.degrees(lat_mean['100GHz']),0))   # rotate: south pole counts as 0 latitude for rot keyword
+hp.projplot(thetas['143GHz'],phis['143GHz'],'-',lw=5,color='c',lonlat=True,rot=(np.degrees(lon_mean['143GHz']),180-np.degrees(lat_mean['143GHz']),0))   # rotate: south pole counts as 0 latitude for rot keyword
+hp.projplot(thetas['217GHz'],phis['217GHz'],'-',lw=5,color='orange',lonlat=True,rot=(np.degrees(lon_mean['217GHz']),180-np.degrees(lat_mean['217GHz']),0))   # rotate: south pole counts as 0 latitude for rot keyword
+for i in np.arange(1000):
+	print(i)
+	_ = hp.projplot(hp.vec2ang(dipoles['100GHz'][i,:])[0][0],hp.vec2ang(dipoles['100GHz'][i,:])[1][0], 'mx',ms=8,mew=.5,zorder=101,alpha=0.5)
+	_ = hp.projplot(hp.vec2ang(dipoles['143GHz'][i,:])[0][0],hp.vec2ang(dipoles['143GHz'][i,:])[1][0], 'cx',ms=8,mew=.5,zorder=101,alpha=0.5)
+	_ = hp.projplot(hp.vec2ang(dipoles['217GHz'][i,:])[0][0],hp.vec2ang(dipoles['217GHz'][i,:])[1][0], 'x',color='orange',ms=8,mew=.5,zorder=101,alpha=0.5)
+
+plt.savefig(outdir+'dipole_Planck_all')
 
 
 print('\n\nCompleted successfully!\n\n')
+
+
+
+means = {key : np.zeros(40) for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']}
+for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
+	plt.figure()
+	dimap = reconstructions[key] * plotmask
+	hp.mollview(dimap)
+	for i, angle in enumerate(np.linspace(0, np.pi/2, 40)):
+		arf_above = dimap.copy()
+		arf_below = dimap.copy()
+		arf_above[np.where(thetas > np.pi - (np.pi/2 + angle*np.sin(phis)))] = np.nan
+		arf_below[np.where(thetas < np.pi - (np.pi/2 + angle*np.sin(phis)))] = np.nan
+		means[key][i] = np.nanmean(arf_above) - np.nanmean(arf_below)
+		hp.projplot(np.pi - (np.pi/2 + angle*np.sin(np.linspace(0,2*np.pi,100))), np.linspace(0,2*np.pi,100))
+	plt.savefig(outdir+'test_%s'%key)
+
+
+plt.figure()
+for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
+	plt.plot(np.linspace(0, np.pi/2, 40), means[key], label=key)
+
+plt.title('Difference of unmasked mean hemisphere pixel values')
+plt.xlabel(r'Rotation angle $\alpha$')
+plt.ylabel('Difference of hemispherical means')
+plt.legend()
+plt.savefig(outdir+'map_dipole_means')
+
+
+
+
+
+key = 'COMMANDER'
+plt.figure()
+dimap = reconstructions[key] * plotmask
+hp.mollview(dimap)
+for i, angle in enumerate([0,np.pi/4,np.pi/2]):
+	hp.projplot(np.pi - (np.pi/2 + angle*np.sin(np.linspace(0,2*np.pi,100))), np.linspace(0,2*np.pi,100))
+
+plt.savefig(outdir+'test_small')
+
+
+
+# subtract the mean of unmasked COMMANDER pixels from the masked COMMANDER reconstruction
+# do inpainting with mean-subtracted statistics
+# measure the dipole
+mean_subtracted_dipoles = { key : 0 for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']}
+recons_inpaint_store = { key : 0 for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']}
+for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
+	ClTT_filter = maplist.Cls[key].copy()[:maplist.lmax+1]
+	ClTT_filter[:100] = 1e15
+	Tlms   = hp.synalm(maplist.Cls[key], lmax=maplist.lmax)
+	lsslms = hp.synalm(maplist.Cls['unWISE'], lmax=maplist.lmax)
+	Tmap_filtered   = hp.alm2map(hp.almxfl(Tlms,   np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
+	lssmap_filtered = hp.alm2map(hp.almxfl(lsslms, np.divide(cltaug_fiducial,           Clgg_filter, out=np.zeros_like(Clgg_filter),               where=Clgg_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
+	outmap_noiserecon = -Tmap_filtered * lssmap_filtered * inverse_fiducial_mask * noises[key]
+	recon_inpainted = reconstructions[key]  + outmap_noiserecon - np.nanmean(reconstructions[key]*plotmask)
+	recons_inpaint_store[key] = recon_inpainted.copy()
+	mean_subtracted_dipoles[key] = hp.vec2ang(hp.fit_dipole(recon_inpainted)[1])
+
+
+
+
+plt.figure()
+hp.mollview(np.nan_to_num(plotmask),norm='hist',coord='G',notext=True,cbar=None,cmap=cmap_dipole,title='Planck x unWISE reconstruction dipole')  # Base map
+for i, key in enumerate(['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']):
+	hp.projplot(hp.vec2ang(mean_dipole[key]),'x',color=linecolors[i],ms=12,mew=4,zorder=100, label=key)  # Mean dipole point
+	hp.projplot(mean_subtracted_dipoles[key], 'o', color=darken(linecolors[i],1.2),ms=12, mew=4, zorder=101)  # mean subtracted dipole
+
+hp.projplot(np.repeat(np.pi/2,100),np.linspace(0,2*np.pi,100),c='#DFDF00',coord='E',lw=5)  # Ecliptic line
+plt.legend(loc='lower right')
+plt.savefig(outdir+'dipole_meansubtracted')
+
+
+
+
+
+
+
+
+means = {key : np.zeros(10) for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']}
+for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
+	dimap = recons_inpaint_store[key] * plotmask
+	for i, angle in enumerate(np.linspace(0, np.pi/2, 10)):
+		arf_above = dimap.copy()
+		arf_below = dimap.copy()
+		arf_above[np.where(thetas > np.pi - (np.pi/2 + angle*np.sin(phis)))] = np.nan
+		arf_below[np.where(thetas < np.pi - (np.pi/2 + angle*np.sin(phis)))] = np.nan
+		means[key][i] = np.nanmean(arf_above) - np.nanmean(arf_below)
+
+
+plt.figure()
+for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
+	plt.plot(np.linspace(0, np.pi/2, 10), means[key], label=key)
+
+plt.title('Difference of unmasked mean hemisphere pixel values')
+plt.xlabel(r'Rotation angle $\alpha$')
+plt.ylabel('Difference of hemispherical means')
+plt.legend()
+plt.savefig(outdir+'map_dipole_means_meansubtracted')
+
