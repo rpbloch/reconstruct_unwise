@@ -1,73 +1,40 @@
-#gather all config parameters here
-import numpy as np
-
-################ red shift binning
-
-z_max = 2.50 #highest redshift.
-z_min = 0.01 #lowest redshift.
-
-N_bins = 1 #number of red shift bins, uniform in conformal distance.
-
-################ halomodel
-
-gasprofile = 'AGN' #only used if use_halomodel=True
-A_electron = 1  # This parameter interpolates between Pk of electrons and Pk of dark matter. It serves to test dependence on fiducial model of electrons. 1 is full electron model.
-halomassfunction = 'Tinker'
-mdef = 'm200d'
-log_kmax = 2
-log_kmin = -5
-k_res = 1000
-ks_hm = np.logspace(log_kmin,log_kmax,num=k_res )     #k-sampling 
-zs_hm = np.logspace(np.log10(z_min),np.log10(z_max),150) #z-sampling 
-
-################ LSS 
-
-LSSexperiment = 'unwise_blue' # 'unwise_blue' #'custom
-
-sigma_photo_z = 0.05 
-sigma_cal = 1e-2 # variance of photometric calibration erros (as appearing in arXiv:1709.08661)
-
-################ cosmological parameters
-
-As = 2.2
-Omega_m = 0.31
-Omega_b = 0.049
-Omega_c=Omega_m-Omega_b
-Omega_r_h2 = 4.15 * 10**-5
-mnu = 0.06
-
-h = 0.68
-H0 = h * 100
-ns = 0.965
-    
-ombh2 = Omega_b*h**2
-omch2=Omega_c*h**2
-
-Omega_r = 9.236 * 10**-5
-Omega_K = 0.0
-w = -1.0
-wa = 0.0
-zdec = 1090 # Redshift at decoupling
-adec = 1 / (1 + zdec) # Scale factor at decoupling
-tau = 0.06 # Optical depth to reionization
-T_CMB = 2.725*10.**6. # muK
-fNL = 0.0
-delta_collapse = 1.686 # Linearized collapse threshold
 
 
-################ CMB experimental noise
-
-#CMB noise
-
-beamArcmin_T = 1.0 # S4
-noiseTuKArcmin_T = 1.0 # 1.5 S4
-beamArcmin_pol = 1.0
-noiseTuKArcmin_pol = 1.0 #1.5
 
 
-###CIB info
-CIB_model = 'Websky'
+MASTER_DATA_DIR = 'data/planck_data_testing/'
 
-################ Cleaning tags
-cleaning_mode = 'Planck'
-cleaning_frequencies = {'Planck' : np.array([30,44,70,100,143,217,353,545,857]), 'SO' : np.array([27,39,93,145,225,280]), 'DoubleSO' : np.round(np.concatenate([np.linspace(10,120,10),np.linspace(125,165,8),np.logspace(np.log10(177),np.log10(1500),20)]),0)[1:-1:3]}
+from collections import namedtuple
+
+fileinfo = namedtuple('MapFileInfo', ['name', 'loc', 'fitshead', 'conform_type'])
+
+map_files = [ \
+             fileinfo(name='SMICA',     loc=MASTER_DATA_DIR+'maps/COM_CMB_IQU-smica_2048_R3.00_full.fits', fitshead='I_STOKES', conform_type='n2r'),
+             fileinfo(name='COMMANDER', loc=MASTER_DATA_DIR+'maps/COM_CMB_IQU-commander_2048_R3.00_full.fits', fitshead='I_STOKES', conform_type='n2r')
+]
+
+
+
+
+input_unWISE = conform(read_file('data/unWISE/numcounts_map1_2048-r1-v2_flag.fits', 'T'), 'flat')
+input_T100 = conform(read_file('maps/HFI_SkyMap_100_2048_R3.01_full.fits', 'I_STOKES'), 'n2r')
+input_T143 = conform(read_file('maps/HFI_SkyMap_143_2048_R3.01_full.fits', 'I_STOKES'), 'n2r') / 2.7255
+input_T217 = conform(read_file('maps/HFI_SkyMap_217_2048_R3.01_full.fits', 'I_STOKES'), 'n2r') / 2.7255
+input_T353 = conform(read_file('maps/HFI_SkyMap_353-psb_2048_R3.01_full.fits', 'I_STOKES'), 'n2r') / 2.7255
+input_T100_noCMB_SMICA = conform(read_file('maps/HFI_CompMap_Foregrounds-smica-100_R3.00.fits', 'INTENSITY'), 'flat')
+input_T143_noCMB_SMICA = conform(read_file('maps/HFI_CompMap_Foregrounds-smica-143_R3.00.fits', 'INTENSITY'), 'flat') / 2.7255
+input_T217_noCMB_SMICA = conform(read_file('maps/HFI_CompMap_Foregrounds-smica-217_R3.00.fits', 'INTENSITY'), 'flat') / 2.7255
+input_T353_noCMB_SMICA = conform(read_file('maps/HFI_CompMap_Foregrounds-smica-353_R3.00.fits', 'INTENSITY'), 'flat') / 2.7255
+input_T100_noCMB_COMMANDER = conform(read_file('maps/HFI_CompMap_Foregrounds-commander-100_R3.00.fits', 'INTENSITY'), 'flat')
+input_T143_noCMB_COMMANDER = conform(read_file('maps/HFI_CompMap_Foregrounds-commander-143_R3.00.fits', 'INTENSITY'), 'flat') / 2.7255
+input_T217_noCMB_COMMANDER = conform(read_file('maps/HFI_CompMap_Foregrounds-commander-217_R3.00.fits', 'INTENSITY'), 'flat') / 2.7255
+input_T353_noCMB_COMMANDER = conform(read_file('maps/HFI_CompMap_Foregrounds-commander-353_R3.00.fits', 'INTENSITY'), 'flat') / 2.7255
+input_T100_thermaldust = conform(read_file('foregrounds/COM_SimMap_thermaldust-ffp10-skyinbands-100_2048_R3.00_full.fits', 'TEMPERATURE'), 'flat')
+input_T143_thermaldust = conform(read_file('foregrounds/COM_SimMap_thermaldust-ffp10-skyinbands-143_2048_R3.00_full.fits', 'TEMPERATURE'), 'flat')  / 2.7255
+input_T217_thermaldust = conform(read_file('foregrounds/COM_SimMap_thermaldust-ffp10-skyinbands-217_2048_R3.00_full.fits', 'TEMPERATURE'), 'flat')  / 2.7255
+input_T353_thermaldust = conform(read_file('foregrounds/COM_SimMap_thermaldust-ffp10-skyinbands-353_2048_R3.00_full.fits', 'TEMPERATURE'), 'flat')  / 2.7255
+input_T353_CIB = np.nan_to_num(read_file('CIB/cib_fullmission_353.hpx.fits', 'CIB'))
+mask_planck = hp.reorder(read_file('COM_Mask_CMB-common-Mask-Int_2048_R3.00.fits', 'TMASK'),n2r=True)
+mask_unwise = read_file('data/mask_unWISE_thres_v10.npy')
+mask_GAL020 = conform(read_file('data/masks/planck/HFI_Mask_GalPlane-apo0_2048_R2.00.fits', 'GAL020'), 'n2r')
+mask_CIB = read_file('CIB/cib_fullmission_353.hpx.fits', 'CIB')

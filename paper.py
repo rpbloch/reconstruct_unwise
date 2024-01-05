@@ -11,7 +11,6 @@ import numpy as np
 import camb
 from camb import model
 import scipy
-from paper_analysis import Estimator, Cosmology
 from astropy.io import fits
 from astropy import units as u
 import healpy as hp
@@ -808,6 +807,8 @@ for case in ('COMMANDER','SMICA','100GHz', '143GHz', '217GHz'):
 	Tcorr = pars.TCMB if case == '100GHz' else 1
 	ClTT_filter = maplist.Cls[case].copy()[:maplist.lmax+1]
 	ClTT_filter[:100] = 1e15
+	recon_copy = reconstructions[case].copy()
+	recon_copy[np.where(~np.isnan(plotmask))] -= np.nanmean(recon_copy[np.where(~np.isnan(plotmask))])
 	print('    case: ' + case)
 	for i in np.arange(n_dipole_iter):
 		if (i % 100 == 0) and (i > 0):
@@ -819,7 +820,8 @@ for case in ('COMMANDER','SMICA','100GHz', '143GHz', '217GHz'):
 		Tmap_filtered = hp.alm2map(hp.almxfl(Tlms, np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
 		lssmap_filtered = hp.alm2map(hp.almxfl(lsslms, np.divide(cltaug_fiducial, Clgg_filter, out=np.zeros_like(Clgg_filter), where=Clgg_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
 		outmap_noiserecon = -Tmap_filtered * lssmap_filtered * inverse_fiducial_mask * noises[case]
-		recon_inpainted = reconstructions[case] + outmap_noiserecon
+		recon_inpainted = recon_copy + outmap_noiserecon
+		#recon_inpainted = reconstructions[case] + outmap_noiserecon
 		dipole_alms = hp.almxfl(hp.map2alm(recon_inpainted,lmax=1),[0,1])
 		np.save('data/cache/stat/dipole/dipole_fiducial_%s_%03d.npy'%(case,i), dipole_alms)
 
@@ -914,15 +916,20 @@ plt.tight_layout()
 plt.savefig(outdir+'freq_recon_fiducialmask')
 
 # 2pt statistics at 217 GHz for the two different masks
+### TEMP
+test=hp.anafast(maplist.input_T217*maplist.mask_huge)/maplist.fsky_huge/maplist.T217beam**2
+atest = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=test, clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial)
+### END TEMP
 plt.figure()
 plt.errorbar(x_ells, bandpowers(recon_Cls['217GHz']), yerr=bandpowers_errbar(errors['217GHz']), capsize=3, label='Fiducial mask', ls='None', marker='x', zorder=100, color=linecolors[0])
 plt.errorbar(x_ells, bandpowers(recon_Cls['217GHz_CIBmask']), yerr=bandpowers_errbar(errors['217GHz_CIBmask']), capsize=3, label='Large mask', ls='None', marker='x', zorder=100, color=linecolors[2])
-plt.semilogy(np.arange(100), np.repeat(noises['217GHz'],100), c='k',label='Theory Noise', ls='--', zorder=10, lw=2)
-plt.semilogy(np.arange(velocity_compute_ells.max()+1), v_217GHz_interp, color=darken(linecolors[1],1.2), lw=2, label='Windowed velocity + noise')
-plt.fill_between(np.arange(velocity_compute_ells.max()+1), errors['v_dndz_min217GHz'], errors['v_dndz_max217GHz'], color=linecolors[1], alpha=0.75)
-plt.fill_between(np.arange(velocity_compute_ells.max()+1), errors['v_total_min217GHz'], errors['v_total_max217GHz'], color=linecolors[1], alpha=0.35)
-plt.xlim([2, 27])
-order = [2,3,1,0]
+plt.semilogy(np.arange(100), np.repeat(noises['217GHz'],100), c='k',label='Theory noise (fiducial mask)', ls='--', zorder=10, lw=2)
+plt.semilogy(np.arange(100), np.repeat(atest,100), c='k',label='Theory noise (large mask)', ls=':', zorder=10, lw=2)
+#plt.semilogy(np.arange(velocity_compute_ells.max()+1), v_217GHz_interp, color=darken(linecolors[1],1.2), lw=2, label='Windowed velocity + noise')
+#plt.fill_between(np.arange(velocity_compute_ells.max()+1), errors['v_dndz_min217GHz'], errors['v_dndz_max217GHz'], color=linecolors[1], alpha=0.75)
+#plt.fill_between(np.arange(velocity_compute_ells.max()+1), errors['v_total_min217GHz'], errors['v_total_max217GHz'], color=linecolors[1], alpha=0.35)
+plt.xlim([2, 82])
+order = [2,3,0,1]
 handles, labels = plt.gca().get_legend_handles_labels()
 plt.legend([handles[idx] for idx in order],[labels[idx] for idx in order])
 plt.xlabel(r'$\ell$')
@@ -1185,21 +1192,34 @@ for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
 	Tmap_filtered   = hp.alm2map(hp.almxfl(Tlms,   np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
 	lssmap_filtered = hp.alm2map(hp.almxfl(lsslms, np.divide(cltaug_fiducial,           Clgg_filter, out=np.zeros_like(Clgg_filter),               where=Clgg_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
 	outmap_noiserecon = -Tmap_filtered * lssmap_filtered * inverse_fiducial_mask * noises[key]
-	recon_inpainted = reconstructions[key]  + outmap_noiserecon - np.nanmean(reconstructions[key]*plotmask)
+	recon_copy = reconstructions[key].copy()
+	recon_copy[np.where(~np.isnan(plotmask))] -= np.nanmean(recon_copy[np.where(~np.isnan(plotmask))])
+	recon_inpainted = recon_copy + outmap_noiserecon
 	recons_inpaint_store[key] = recon_inpainted.copy()
 	mean_subtracted_dipoles[key] = hp.vec2ang(hp.fit_dipole(recon_inpainted)[1])
 
 
+dipole_alms_meansub = {key : np.zeros((n_dipole_iter, 3), dtype=np.complex128) for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}
+for case in ('COMMANDER','SMICA','100GHz', '143GHz', '217GHz'):
+	for i in np.arange(n_dipole_iter):
+		dipole_alms_meansub[case][i,:] = np.load('data/cache/stat/dipole/dipole_fiducial_%s_%03d.npy'%(case,i))
+
+measured_dipoles_meansub = {key : np.mean(dipole_alms_meansub[key], axis=0) for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}
+mean_dipole_meansub = {key : hp.fit_dipole(hp.alm2map(measured_dipoles_meansub[key],nside=2,lmax=1))[1] for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}
+dipoles_meansub = {key : np.zeros((n_dipole_iter, 3)) for key in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']}
+for case in ['COMMANDER','SMICA','100GHz', '143GHz', '217GHz']:
+	for i in np.arange(n_dipole_iter):
+		dipoles_meansub[case][i,:] = hp.fit_dipole(hp.alm2map(dipole_alms_meansub[case][i,:],nside=2,lmax=1))[1]
 
 
 plt.figure()
 hp.mollview(np.nan_to_num(plotmask),norm='hist',coord='G',notext=True,cbar=None,cmap=cmap_dipole,title='Planck x unWISE reconstruction dipole')  # Base map
 for i, key in enumerate(['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']):
-	hp.projplot(hp.vec2ang(mean_dipole[key]),'x',color=linecolors[i],ms=12,mew=4,zorder=100, label=key)  # Mean dipole point
-	hp.projplot(mean_subtracted_dipoles[key], 'o', color=darken(linecolors[i],1.2),ms=12, mew=4, zorder=101)  # mean subtracted dipole
+	#hp.projplot(hp.vec2ang(mean_dipole[key]),'x',color=linecolors[i],ms=12,mew=4,zorder=100, label=key+' (old)')  # Mean dipole point
+	hp.projplot(hp.vec2ang(mean_dipole_meansub[key]), 'o', color=darken(linecolors[i],1.2),ms=12, mew=4, zorder=101,label=key)  # mean subtracted dipole
 
 hp.projplot(np.repeat(np.pi/2,100),np.linspace(0,2*np.pi,100),c='#DFDF00',coord='E',lw=5)  # Ecliptic line
-plt.legend(loc='lower right')
+plt.legend(loc='lower right',markerscale=0.5)
 plt.savefig(outdir+'dipole_meansubtracted')
 
 
@@ -1229,4 +1249,42 @@ plt.xlabel(r'Rotation angle $\alpha$')
 plt.ylabel('Difference of hemispherical means')
 plt.legend()
 plt.savefig(outdir+'map_dipole_means_meansubtracted')
+
+
+
+
+
+
+
+plt.figure()
+hp.mollview(plotmask)
+for angle in (0, np.pi/6, np.pi/4, np.pi/3, np.pi/2):
+	phis = np.linspace(0, 2*np.pi, 100)
+	thetas = np.pi/2 + angle*np.sin(phis)
+	hp.projplot(thetas, phis*np.cos(angle))
+
+plt.savefig(outdir+'test')
+
+
+
+
+
+for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
+	plt.figure()
+	dimap = reconstructions[key] * plotmask
+	hp.mollview(dimap)
+	for i, angle in enumerate(np.linspace(0, np.pi/2, 40)):
+		arf_above = dimap.copy()
+		arf_below = dimap.copy()
+		arf_above[np.where(thetas > np.pi - (np.pi/2 + angle*np.sin(phis)))] = np.nan
+		arf_below[np.where(thetas < np.pi - (np.pi/2 + angle*np.sin(phis)))] = np.nan
+		means[key][i] = np.nanmean(arf_above) - np.nanmean(arf_below)
+		hp.projplot(np.pi - (np.pi/2 + angle*np.sin(np.linspace(0,2*np.pi,100))), np.linspace(0,2*np.pi,100))
+	plt.savefig(outdir+'test_%s'%key)
+
+
+
+# Put words in dipole section:
+# 1) About the magnitudes we measure (remember dipole map max pixel value is dipole length magnitude)
+# 2) About how the different cases point all over the place and what that says about constraining an upper limit
 
