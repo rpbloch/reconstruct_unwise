@@ -1,3 +1,31 @@
+# hp.remove_dipole does something for reconstructions using hp.ma
+# but hp.remove_dipole gives same result whether or not its used at all
+# when taking power spectrum of things masked by multiplying by integer maps
+# Above is sussy? Doesn't seem to apply anymore. NVM. Big difference for SMICA, not so much for COMMANDER
+# Also the COMMANDER results appear to be the same as Matt?
+
+# mask (original way) then debeam = 10% higher theory noise than reverse order in new way
+# mask (new way) then debeam = exact result as above for 10% higher theory noise
+
+# if using ClTT = hp.anafast(map) (no planck masking) for SMICA, we don't get the 10% loss.
+# but ClTT unmasked map for COMMANDER is much more different than theory ClTT for COMMANDER
+# when planck masking, SMICA is almost the exact same with or without the planck mask
+# so why is SMICA so adversely affected by our choice of ClTT?
+
+# Matt and I get the same COMMANDER reconstruction, but different y-axis by a bit.
+# Choice of Cltaug probably. However his theory noise is a bit higher than mine
+# relative to the reconstruction, so while we have the same shape (and same bandpowered shape)
+# his noise line goes right through the middle so mine looks more like excess signal when it's
+# just low noise.
+
+# Now why do I get low noise?...His theory spectra are taken directly from maps
+
+# SMICA fix by matching theory noise TT and map input TT, letting filter TT remain planckmasked.
+# however due to crap in COMMANDER map this ruins the COMMANDER recon? =(
+
+# Why do we get different shapes for our SMICA reconstructions but not for our COMMANDER ones?
+
+
 import os
 import matplotlib as mpl
 from matplotlib import pyplot as plt
@@ -1132,101 +1160,101 @@ print('\n\nCompleted successfully!\n\n')
 
 
 
-means = {key : np.zeros(40) for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']}
-for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
-	plt.figure()
-	dimap = reconstructions[key] * plotmask
-	hp.mollview(dimap)
-	for i, angle in enumerate(np.linspace(0, np.pi/2, 40)):
-		arf_above = dimap.copy()
-		arf_below = dimap.copy()
-		arf_above[np.where(thetas > np.pi - (np.pi/2 + angle*np.sin(phis)))] = np.nan
-		arf_below[np.where(thetas < np.pi - (np.pi/2 + angle*np.sin(phis)))] = np.nan
-		means[key][i] = np.nanmean(arf_above) - np.nanmean(arf_below)
-		hp.projplot(np.pi - (np.pi/2 + angle*np.sin(np.linspace(0,2*np.pi,100))), np.linspace(0,2*np.pi,100))
-	plt.savefig(outdir+'test_%s'%key)
+# means = {key : np.zeros(40) for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']}
+# for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
+# 	plt.figure()
+# 	dimap = reconstructions[key] * plotmask
+# 	hp.mollview(dimap)
+# 	for i, angle in enumerate(np.linspace(0, np.pi/2, 40)):
+# 		arf_above = dimap.copy()
+# 		arf_below = dimap.copy()
+# 		arf_above[np.where(thetas > np.pi - (np.pi/2 + angle*np.sin(phis)))] = np.nan
+# 		arf_below[np.where(thetas < np.pi - (np.pi/2 + angle*np.sin(phis)))] = np.nan
+# 		means[key][i] = np.nanmean(arf_above) - np.nanmean(arf_below)
+# 		hp.projplot(np.pi - (np.pi/2 + angle*np.sin(np.linspace(0,2*np.pi,100))), np.linspace(0,2*np.pi,100))
+# 	plt.savefig(outdir+'test_%s'%key)
 
 
-plt.figure()
-for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
-	plt.plot(np.linspace(0, np.pi/2, 40), means[key], label=key)
+# plt.figure()
+# for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
+# 	plt.plot(np.linspace(0, np.pi/2, 40), means[key], label=key)
 
-plt.title('Difference of unmasked mean hemisphere pixel values')
-plt.xlabel(r'Rotation angle $\alpha$')
-plt.ylabel('Difference of hemispherical means')
-plt.legend()
-plt.savefig(outdir+'map_dipole_means')
-
-
-
-
-
-key = 'COMMANDER'
-plt.figure()
-dimap = reconstructions[key] * plotmask
-hp.mollview(dimap)
-for i, angle in enumerate([0,np.pi/4,np.pi/2]):
-	hp.projplot(np.pi - (np.pi/2 + angle*np.sin(np.linspace(0,2*np.pi,100))), np.linspace(0,2*np.pi,100))
-
-plt.savefig(outdir+'test_small')
-
-
-
-# subtract the mean of unmasked COMMANDER pixels from the masked COMMANDER reconstruction
-# do inpainting with mean-subtracted statistics
-# measure the dipole
-mean_subtracted_dipoles = { key : 0 for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']}
-recons_inpaint_store = { key : 0 for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']}
-for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
-	ClTT_filter = maplist.Cls[key].copy()[:maplist.lmax+1]
-	ClTT_filter[:100] = 1e15
-	Tlms   = hp.synalm(maplist.Cls[key], lmax=maplist.lmax)
-	lsslms = hp.synalm(maplist.Cls['unWISE'], lmax=maplist.lmax)
-	Tmap_filtered   = hp.alm2map(hp.almxfl(Tlms,   np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
-	lssmap_filtered = hp.alm2map(hp.almxfl(lsslms, np.divide(cltaug_fiducial,           Clgg_filter, out=np.zeros_like(Clgg_filter),               where=Clgg_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
-	outmap_noiserecon = -Tmap_filtered * lssmap_filtered * inverse_fiducial_mask * noises[key]
-	recon_inpainted = reconstructions[key]  + outmap_noiserecon - np.nanmean(reconstructions[key]*plotmask)
-	recons_inpaint_store[key] = recon_inpainted.copy()
-	mean_subtracted_dipoles[key] = hp.vec2ang(hp.fit_dipole(recon_inpainted)[1])
-
-
-
-
-plt.figure()
-hp.mollview(np.nan_to_num(plotmask),norm='hist',coord='G',notext=True,cbar=None,cmap=cmap_dipole,title='Planck x unWISE reconstruction dipole')  # Base map
-for i, key in enumerate(['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']):
-	hp.projplot(hp.vec2ang(mean_dipole[key]),'x',color=linecolors[i],ms=12,mew=4,zorder=100, label=key)  # Mean dipole point
-	hp.projplot(mean_subtracted_dipoles[key], 'o', color=darken(linecolors[i],1.2),ms=12, mew=4, zorder=101)  # mean subtracted dipole
-
-hp.projplot(np.repeat(np.pi/2,100),np.linspace(0,2*np.pi,100),c='#DFDF00',coord='E',lw=5)  # Ecliptic line
-plt.legend(loc='lower right')
-plt.savefig(outdir+'dipole_meansubtracted')
+# plt.title('Difference of unmasked mean hemisphere pixel values')
+# plt.xlabel(r'Rotation angle $\alpha$')
+# plt.ylabel('Difference of hemispherical means')
+# plt.legend()
+# plt.savefig(outdir+'map_dipole_means')
 
 
 
 
 
+# key = 'COMMANDER'
+# plt.figure()
+# dimap = reconstructions[key] * plotmask
+# hp.mollview(dimap)
+# for i, angle in enumerate([0,np.pi/4,np.pi/2]):
+# 	hp.projplot(np.pi - (np.pi/2 + angle*np.sin(np.linspace(0,2*np.pi,100))), np.linspace(0,2*np.pi,100))
+
+# plt.savefig(outdir+'test_small')
 
 
 
-means = {key : np.zeros(10) for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']}
-for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
-	dimap = recons_inpaint_store[key] * plotmask
-	for i, angle in enumerate(np.linspace(0, np.pi/2, 10)):
-		arf_above = dimap.copy()
-		arf_below = dimap.copy()
-		arf_above[np.where(thetas > np.pi - (np.pi/2 + angle*np.sin(phis)))] = np.nan
-		arf_below[np.where(thetas < np.pi - (np.pi/2 + angle*np.sin(phis)))] = np.nan
-		means[key][i] = np.nanmean(arf_above) - np.nanmean(arf_below)
+# # subtract the mean of unmasked COMMANDER pixels from the masked COMMANDER reconstruction
+# # do inpainting with mean-subtracted statistics
+# # measure the dipole
+# mean_subtracted_dipoles = { key : 0 for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']}
+# recons_inpaint_store = { key : 0 for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']}
+# for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
+# 	ClTT_filter = maplist.Cls[key].copy()[:maplist.lmax+1]
+# 	ClTT_filter[:100] = 1e15
+# 	Tlms   = hp.synalm(maplist.Cls[key], lmax=maplist.lmax)
+# 	lsslms = hp.synalm(maplist.Cls['unWISE'], lmax=maplist.lmax)
+# 	Tmap_filtered   = hp.alm2map(hp.almxfl(Tlms,   np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
+# 	lssmap_filtered = hp.alm2map(hp.almxfl(lsslms, np.divide(cltaug_fiducial,           Clgg_filter, out=np.zeros_like(Clgg_filter),               where=Clgg_filter!=0)), lmax=maplist.lmax, nside=maplist.nside)
+# 	outmap_noiserecon = -Tmap_filtered * lssmap_filtered * inverse_fiducial_mask * noises[key]
+# 	recon_inpainted = reconstructions[key]  + outmap_noiserecon - np.nanmean(reconstructions[key]*plotmask)
+# 	recons_inpaint_store[key] = recon_inpainted.copy()
+# 	mean_subtracted_dipoles[key] = hp.vec2ang(hp.fit_dipole(recon_inpainted)[1])
 
 
-plt.figure()
-for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
-	plt.plot(np.linspace(0, np.pi/2, 10), means[key], label=key)
 
-plt.title('Difference of unmasked mean hemisphere pixel values')
-plt.xlabel(r'Rotation angle $\alpha$')
-plt.ylabel('Difference of hemispherical means')
-plt.legend()
-plt.savefig(outdir+'map_dipole_means_meansubtracted')
+
+# plt.figure()
+# hp.mollview(np.nan_to_num(plotmask),norm='hist',coord='G',notext=True,cbar=None,cmap=cmap_dipole,title='Planck x unWISE reconstruction dipole')  # Base map
+# for i, key in enumerate(['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']):
+# 	hp.projplot(hp.vec2ang(mean_dipole[key]),'x',color=linecolors[i],ms=12,mew=4,zorder=100, label=key)  # Mean dipole point
+# 	hp.projplot(mean_subtracted_dipoles[key], 'o', color=darken(linecolors[i],1.2),ms=12, mew=4, zorder=101)  # mean subtracted dipole
+
+# hp.projplot(np.repeat(np.pi/2,100),np.linspace(0,2*np.pi,100),c='#DFDF00',coord='E',lw=5)  # Ecliptic line
+# plt.legend(loc='lower right')
+# plt.savefig(outdir+'dipole_meansubtracted')
+
+
+
+
+
+
+
+
+# means = {key : np.zeros(10) for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']}
+# for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
+# 	dimap = recons_inpaint_store[key] * plotmask
+# 	for i, angle in enumerate(np.linspace(0, np.pi/2, 10)):
+# 		arf_above = dimap.copy()
+# 		arf_below = dimap.copy()
+# 		arf_above[np.where(thetas > np.pi - (np.pi/2 + angle*np.sin(phis)))] = np.nan
+# 		arf_below[np.where(thetas < np.pi - (np.pi/2 + angle*np.sin(phis)))] = np.nan
+# 		means[key][i] = np.nanmean(arf_above) - np.nanmean(arf_below)
+
+
+# plt.figure()
+# for key in ['COMMANDER', 'SMICA', '100GHz', '143GHz', '217GHz']:
+# 	plt.plot(np.linspace(0, np.pi/2, 10), means[key], label=key)
+
+# plt.title('Difference of unmasked mean hemisphere pixel values')
+# plt.xlabel(r'Rotation angle $\alpha$')
+# plt.ylabel('Difference of hemispherical means')
+# plt.legend()
+# plt.savefig(outdir+'map_dipole_means_meansubtracted')
 

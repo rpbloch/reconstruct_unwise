@@ -1,3 +1,15 @@
+__pycache__/
 data/
 plots/
 output/
+recon_Cls_bandpower.png
+recon_Cls_bandpower_smica.png
+recon_Cls.png
+recon_Cls_SMICA.png
+reconmapsmooth_masked.png
+reconmapsmooth_pre_masked.png
+reconmapsmooth_pre.png
+sphtfunc_recon_masked.png
+sphtfunc_recon_masked_pre.png
+tsz_mockpower.png
+reconmapsmooth.png
