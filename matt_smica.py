@@ -218,10 +218,10 @@ fsky_recon = np.sum(maskunwise)/hp.nside2npix(nside)
 
 plt.figure()
 plt.semilogy(total/fsky_recon,'k')
-plt.semilogy(Nrec_mock*np.ones(len(total)),'b--')
+plt.semilogy(Nrec*np.ones(len(total)),'b--')
 #plt.semilogy(Nrec_mock*np.ones(len(total)),'r--')
 #plt.semilogy(total/fsky_recon,'b')
-plt.semilogy(total_pre/fsky_recon,'r')
+#plt.semilogy(total_pre/fsky_recon,'r')
 
 plt.xlim(2,150)
 plt.ylim(1e-9,2e-8)

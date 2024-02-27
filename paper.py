@@ -26,6 +26,13 @@
 # Why do we get different shapes for our SMICA reconstructions but not for our COMMANDER ones?
 
 
+# 1) get SMICA shape figured out why it's different. Maybe noise? 10% might be permanent.
+# 2) Fix your cosmology to Matt's
+# 3) Recompute window velocity via Matt's new paper method
+# 4) Check the \ell to \ellbar approximation
+
+# Meet Monday
+
 import os
 import matplotlib as mpl
 from matplotlib import pyplot as plt
