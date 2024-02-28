@@ -91,6 +91,7 @@ class maps(object):
 		self.mask_planck = hp.reorder(fits.open('data/planck_data_testing/COM_Mask_CMB-common-Mask-Int_2048_R3.00.fits')[1].data['TMASK'],n2r=True)
 		self.mask_unwise = np.load('data/mask_unWISE_thres_v10.npy')
 		self.mask_GAL020 = hp.reorder(fits.open('data/masks/planck/HFI_Mask_GalPlane-apo0_2048_R2.00.fits')[1].data['GAL020'],n2r=True)
+		self.mask_GAL080 = hp.reorder(fits.open('data/masks/planck/HFI_Mask_GalPlane-apo0_2048_R2.00.fits')[1].data['GAL080'],n2r=True)
 		mask_CIB = np.ones(self.input_T353_CIB.size)
 		mask_CIB[np.where(np.isnan(fits.open('data/planck_data_testing/CIB/cib_fullmission_353.hpx.fits')[1].data['CIB']))] = 0
 		self.mask = self.mask_unwise * self.mask_planck
@@ -110,7 +111,42 @@ class maps(object):
 		self.T353beam = hp.gauss_beam(fwhm=np.radians(4.94/60), lmax=6143)
 		self.T100beam[self.lmax:] = self.T100beam[self.lmax]  # Extremely high beam for 100GHz at high ell ruins the map
 		###
-		print('Masking/debeaming maps...')
+		# Containers
+		self.map_container = {'100GHz' : self.input_T100,
+						 '143GHz' : self.input_T143,
+						 '217GHz' : self.input_T217,
+						 '353GHz' : self.input_T353,
+						 '100GHz_noSMICA' : self.input_T100_noCMB_SMICA,
+						 '143GHz_noSMICA' : self.input_T143_noCMB_SMICA,
+						 '217GHz_noSMICA' : self.input_T217_noCMB_SMICA,
+						 '353GHz_noSMICA' : self.input_T353_noCMB_SMICA,
+						 '100GHz_noCOMMANDER' : self.input_T100_noCMB_COMMANDER,
+						 '143GHz_noCOMMANDER' : self.input_T143_noCMB_COMMANDER,
+						 '217GHz_noCOMMANDER' : self.input_T217_noCMB_COMMANDER,
+						 '353GHz_noCOMMANDER' : self.input_T353_noCMB_COMMANDER,
+						 '100GHz_thermaldust' : self.input_T100_thermaldust,
+						 '143GHz_thermaldust' : self.input_T143_thermaldust,
+						 '217GHz_thermaldust' : self.input_T217_thermaldust,
+						 '353GHz_thermaldust' : self.input_T353_thermaldust,
+						 '353GHz_CIB' : self.input_T353_CIB}
+
+		self.beam_container = {'100GHz' : self.T100beam,
+						  '143GHz' : self.T143beam,
+						  '217GHz' : self.T217beam,
+						  '353GHz' : self.T353beam,
+						  '100GHz_noSMICA' : self.T100beam,
+						  '143GHz_noSMICA' : self.T143beam,
+						  '217GHz_noSMICA' : self.T217beam,
+						  '353GHz_noSMICA' : self.T353beam,
+						  '100GHz_noCOMMANDER' : self.T100beam,
+						  '143GHz_noCOMMANDER' : self.T143beam,
+						  '217GHz_noCOMMANDER' : self.T217beam,
+						  '353GHz_noCOMMANDER' : self.T353beam,
+						  '100GHz_thermaldust' : self.T100beam,
+						  '143GHz_thermaldust' : self.T143beam,
+						  '217GHz_thermaldust' : self.T217beam,
+						  '353GHz_thermaldust' : self.T353beam,
+						  '353GHz_CIB' : self.SMICAbeam}
 	def mask_and_debeam(self, input_map, mask_map, beam):
 		return hp.almxfl(hp.map2alm(input_map * mask_map, lmax=self.lmax), 1/beam)
 	def alm2cl(self, alms, fsky):
@@ -156,12 +192,13 @@ def combine_alm(dTlm, dlm, mask, ClTT, Clgg, Cltaudg, Noise, lmax, nside_out, co
     Tmap_filtered = hp.alm2map(dTlm_xi, lmax=lmax, nside=nside_out) * mask
     lssmap_filtered = hp.alm2map(dlm_zeta, lmax=lmax, nside=nside_out) * mask
     outmap_filtered = Tmap_filtered*lssmap_filtered
-    outmap = -outmap_filtered * Noise * mask
+    outmap = hp.ma(-outmap_filtered * Noise)
+    outmap.mask = np.logical_not(mask)
     if convert_K:  # output map has units of K
         outmap /= 2.725
-    return outmap
+    return hp.remove_dipole(outmap, fitval=False)
 
-def bias_e2(z, k):
+def bias_e2(z, k):  # Note: matt's code takes in chi and ell in limber approximation replacement for k. Is this OK? Leaving alone for now.
     bstar2 = lambda z : 0.971 - 0.013*z
     gamma = lambda z : 1.91 - 0.59*z + 0.10*z**2
     kstar = lambda z : 4.36 - 3.24*z + 3.10*z**2 - 0.42*z**3
@@ -170,7 +207,39 @@ def bias_e2(z, k):
         bias_squared[zid, :] = bstar2(redshift) / ( 1 + (k/kstar(redshift))**gamma(redshift) )
     return np.sqrt(bias_squared)
 
-def compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt, clgg, cltaug, sample_ells, chis, chibar, zbar_index, bin_width):
+# def compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt, clgg, cltaug, sample_ells, chis, chibar, zbar_index, bin_width):
+#     terms = 0
+#     terms_with_me_entry = np.zeros(chis.size)
+#     terms_with_mm_me_entry = np.zeros(chis.size)
+#     ell_const = 2
+#     for l2 in np.arange(spectra_lmax):
+#     	Pmm_at_ellprime = np.diagonal(np.flip(Pmm_full.P(results.redshift_at_comoving_radial_distance(chis), (l2+0.5)/chis[::-1], grid=True), axis=1))
+#     	Pem_at_ellprime = Pmm_at_ellprime * np.diagonal(np.flip(bias_e2(results.redshift_at_comoving_radial_distance(chis), (l2+0.5)/chis[::-1]), axis=1))  # Convert Pmm to Pem
+#     	Pem_at_ellprime_at_zbar = Pem_at_ellprime[zbar_index]
+#     	for l1 in np.arange(np.abs(l2-ell_const),l2+ell_const+1):
+#     		if l1 > spectra_lmax-1 or l1 <2:   #triangle rule
+#     			continue
+#     		gamma_ksz = np.sqrt((2*l1+1)*(2*l2+1)*(2*ell_const+1)/(4*np.pi))*wigner_symbol(ell_const, l1, l2)*cltaug[l2]
+#     		term_with_me_entry = (gamma_ksz*gamma_ksz/(cltt[l1]*clgg[l2])) * (Pem_at_ellprime/Pem_at_ellprime_at_zbar)
+#     		term_with_mm_me_entry = (gamma_ksz*gamma_ksz/(cltt[l1]*clgg[l2])) * (Pmm_at_ellprime/Pem_at_ellprime_at_zbar)
+#     		term_entry = (gamma_ksz*gamma_ksz/(cltt[l1]*clgg[l2]))
+#     		if np.isfinite(term_entry):
+#     			terms += term_entry
+#     			terms_with_me_entry += term_with_me_entry
+#     			terms_with_mm_me_entry += term_with_mm_me_entry
+#     ratio_me_me = terms_with_me_entry / terms
+#     ratio_mm_me = terms_with_mm_me_entry / terms
+#     window_v = np.nan_to_num(  ( 1/bin_width ) * ( chibar**2 / chis**2 ) * ( galaxy_window / galaxy_window[zbar_index] ) * ( (1+results.redshift_at_comoving_radial_distance(chis))**2 / (1+results.redshift_at_comoving_radial_distance(chibar))**2 ) * ratio_me_me  )
+#     window_v_mm = np.nan_to_num(  ( 1/bin_width ) * ( chibar**2 / chis**2 ) * ( galaxy_window / galaxy_window[zbar_index] ) * ( (1+results.redshift_at_comoving_radial_distance(chis))**2 / (1+results.redshift_at_comoving_radial_distance(chibar))**2 ) * ratio_mm_me  )
+#     clv_windowed = np.zeros(sample_ells.size)
+#     clv_windowed_mm = np.zeros(sample_ells.size)
+#     for i in np.arange(sample_ells.size):
+#     	clv_windowed[i] = np.trapz(window_v*np.trapz(window_v*clv[i,:,:], chis,axis=1), chis)
+#     	clv_windowed_mm[i] = np.trapz(window_v_mm*np.trapz(window_v_mm*clv[i,:,:], chis,axis=1), chis)
+#     return clv_windowed, clv_windowed_mm
+
+def compute_velocity_window(results, Pmm_full, galaxy_window, cltt, clgg, cltaug, chis, zbar_index):
+    chibar = chis[zbar_index]
     terms = 0
     terms_with_me_entry = np.zeros(chis.size)
     terms_with_mm_me_entry = np.zeros(chis.size)
@@ -192,14 +261,9 @@ def compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt, clgg,
     			terms_with_mm_me_entry += term_with_mm_me_entry
     ratio_me_me = terms_with_me_entry / terms
     ratio_mm_me = terms_with_mm_me_entry / terms
-    window_v = np.nan_to_num(  ( 1/bin_width ) * ( chibar**2 / chis**2 ) * ( galaxy_window / galaxy_window[zbar_index] ) * ( (1+results.redshift_at_comoving_radial_distance(chis))**2 / (1+results.redshift_at_comoving_radial_distance(chibar))**2 ) * ratio_me_me  )
-    window_v_mm = np.nan_to_num(  ( 1/bin_width ) * ( chibar**2 / chis**2 ) * ( galaxy_window / galaxy_window[zbar_index] ) * ( (1+results.redshift_at_comoving_radial_distance(chis))**2 / (1+results.redshift_at_comoving_radial_distance(chibar))**2 ) * ratio_mm_me  )
-    clv_windowed = np.zeros(sample_ells.size)
-    clv_windowed_mm = np.zeros(sample_ells.size)
-    for i in np.arange(sample_ells.size):
-    	clv_windowed[i] = np.trapz(window_v*np.trapz(window_v*clv[i,:,:], chis,axis=1), chis)
-    	clv_windowed_mm[i] = np.trapz(window_v_mm*np.trapz(window_v_mm*clv[i,:,:], chis,axis=1), chis)
-    return clv_windowed, clv_windowed_mm
+    window_v = np.nan_to_num(  ( chibar**2 / chis**2 ) * ( galaxy_window / galaxy_window[zbar_index] ) * ( (1+results.redshift_at_comoving_radial_distance(chis))**2 / (1+results.redshift_at_comoving_radial_distance(chibar))**2 ) * ratio_me_me  )
+    window_v_mm = np.nan_to_num(  ( chibar**2 / chis**2 ) * ( galaxy_window / galaxy_window[zbar_index] ) * ( (1+results.redshift_at_comoving_radial_distance(chis))**2 / (1+results.redshift_at_comoving_radial_distance(chibar))**2 ) * ratio_mm_me  )
+    return window_v, window_v_mm
 
 def compute_common(dTlm, ClTT, Clgg, lmax, nside_out):
 	ClTT_filter = ClTT.copy()[:lmax+1]
@@ -216,45 +280,84 @@ if not os.path.exists(outdir):
     os.makedirs(outdir)
 
 ### Setup
-redshifts = np.linspace(0.0,2.5,100)
-zbar_index = 30
-spectra_lmax = 4000
-recon_lmax = 100
-ls = np.unique(np.append(np.geomspace(1,spectra_lmax,200).astype(int), spectra_lmax))
-maplist = maps()
+# redshifts = np.linspace(0.0,2.5,100)
+# zbar_index = 30
+# spectra_lmax = 4000
+# recon_lmax = 100
+# ls = np.unique(np.append(np.geomspace(1,spectra_lmax,200).astype(int), spectra_lmax))
+# maplist = maps()
 
-### Cosmology
-print('Setting up cosmology')
-nks = 2000
-ks = np.logspace(-4,1,nks)
-pars = camb.CAMBparams()
+# ### Cosmology
+# print('Setting up cosmology')
+# nks = 2000
+# ks = np.logspace(-4,1,nks)
+# pars = camb.CAMBparams()
+# pars.set_cosmology(H0=67.5, ombh2=0.022, omch2=0.122)
+# pars.InitPower.set_params(ns=0.965)
+# pars.set_matter_power(redshifts=redshifts, kmax=2.0)
+# pars.NonLinear = model.NonLinear_none
+# results = camb.get_results(pars)
+# cosmo_data = camb.get_background(pars)
+
+# chis = results.comoving_radial_distance(redshifts)
+# bin_width = chis[-1] - chis[0]
+# fullspectrum_ls = np.unique(np.append(np.geomspace(1,spectra_lmax-1,200).astype(int), spectra_lmax-1))
+
+maplist = maps()
+# Using Matt's cosmology
+nside=2048
+kmax=10  #kmax to use
+
+
+pars = camb.CAMBparams(Evolve_baryon_cs=True)
 pars.set_cosmology(H0=67.5, ombh2=0.022, omch2=0.122)
 pars.InitPower.set_params(ns=0.965)
-pars.set_matter_power(redshifts=redshifts, kmax=2.0)
-pars.NonLinear = model.NonLinear_none
-results = camb.get_results(pars)
-cosmo_data = camb.get_background(pars)
+pars.set_accuracy(AccuracyBoost=2)
 
-chis = results.comoving_radial_distance(redshifts)
-bin_width = chis[-1] - chis[0]
+results = camb.get_background(pars)
+
+PK = camb.get_matter_power_interpolator(pars, nonlinear=True, 
+    hubble_units=False, k_hunit=False, kmax=kmax,
+    var1=model.Transfer_tot,var2=model.Transfer_tot, zmax=10,k_per_logint=200)
+
+nz = 500
+chis = np.linspace(0.001,5000,nz)
+chis = np.linspace(0.001,5000,nz)
+zs=results.redshift_at_comoving_radial_distance(chis)
+hs = results.h_of_z(zs)
+ells = np.arange(3*nside)
+
+ibar=250
+zbar=zs[ibar]
+chibar=chis[ibar]
+
+
+
+spectra_lmax = 4000
 fullspectrum_ls = np.unique(np.append(np.geomspace(1,spectra_lmax-1,200).astype(int), spectra_lmax-1))
 
 Pmms = np.zeros((chis.size,fullspectrum_ls.size))
-Pmm_full = camb.get_matter_power_interpolator(pars, nonlinear=True, hubble_units=False, k_hunit=False, kmax=100., zmax=redshifts.max())
+#Pmm_full = camb.get_matter_power_interpolator(pars, nonlinear=True, hubble_units=False, k_hunit=False, kmax=100., zmax=redshifts.max())
+Pmm_full = camb.get_matter_power_interpolator(pars, nonlinear=True, hubble_units=False, k_hunit=False, kmax=kmax, zmax=zs.max())
 for l, ell in enumerate(fullspectrum_ls):  # Do limber approximation: P(z,k) -> P(z, (ell+0.5)/chi )
-	Pmms[:,l] = np.diagonal(np.flip(Pmm_full.P(results.redshift_at_comoving_radial_distance(chis), (ell+0.5)/chis[::-1], grid=True), axis=1))
+	Pmms[:,l] = np.diagonal(np.flip(Pmm_full.P(zs, (ell+0.5)/chis[::-1], grid=True), axis=1))
 
-thomson_SI = 6.6524e-29
-m_per_Mpc = 3.086e22
-ne_0 = 0.16773206895639853  # Average electron density today in 1/m^3
+ 
+# thomson_SI = 6.6524e-29
+# m_per_Mpc = 3.086e22
+# ne_0 = 0.16773206895639853  # Average electron density today in 1/m^3
+# taud_window  = (thomson_SI * ne_0 * (1+results.redshift_at_comoving_radial_distance(chis))**2 * m_per_Mpc)[zbar_index]  # Units of 1/Mpc
 
-taud_window  = (thomson_SI * ne_0 * (1+results.redshift_at_comoving_radial_distance(chis))**2 * m_per_Mpc)[zbar_index]  # Units of 1/Mpc
-h = results.h_of_z(redshifts)
-chibar = results.comoving_radial_distance(redshifts[zbar_index])
+# Use Matt's taud window? or is his tau and mine should be taud...
+taud_window = (5.18e-7*(1+zs)**2)
+
+# h = results.h_of_z(redshifts)
+# chibar = results.comoving_radial_distance(redshifts[zbar_index])
 
 ### Windows and spectra
 print('Computing galaxy windows and tau-g cross-power')
-galaxy_bias = (0.8+1.2*results.redshift_at_comoving_radial_distance(chis))
+# galaxy_bias = (0.8+1.2*results.redshift_at_comoving_radial_distance(chis))
+galaxy_bias = (0.8+1.2*zs)
 
 with open('data/unWISE/blue.txt', 'r') as FILE:
     dndz_data = FILE.readlines()
@@ -272,114 +375,218 @@ for i in np.arange(100):
 	dNdz_err = interp1d(z_alex_err, dN_alex_err, kind= 'linear', bounds_error=False, fill_value=0)(results.redshift_at_comoving_radial_distance(chis))
 	dNdz_realization[i,:] = dNdz_err.copy()
 
-galaxy_window = galaxy_bias * dNdz_fiducial * cosmo_data.h_of_z(results.redshift_at_comoving_radial_distance(chis))
-galaxy_window_dndz = galaxy_bias[np.newaxis,:] * dNdz_realization * cosmo_data.h_of_z(results.redshift_at_comoving_radial_distance(chis))
+# galaxy_window = galaxy_bias * dNdz_fiducial * cosmo_data.h_of_z(results.redshift_at_comoving_radial_distance(chis))
+# galaxy_window_dndz = galaxy_bias[np.newaxis,:] * dNdz_realization * cosmo_data.h_of_z(results.redshift_at_comoving_radial_distance(chis))
 
+galaxy_window = galaxy_bias * dNdz_fiducial * results.h_of_z(zs)
+galaxy_window_dndz = galaxy_bias[np.newaxis,:] * dNdz_realization * results.h_of_z(zs)
+zbar_index = np.abs(zs-np.average(z_alex,weights=dN_alex)).argmin()
+
+
+ls = np.unique(np.append(np.geomspace(1,spectra_lmax,200).astype(int), spectra_lmax))   # Duplicate of above if going back to old way
 cltaug_fiducial_coarse = np.zeros((chis.size, ls.size))
 cltaug_dndz_coarse = np.zeros((100, chis.size, ls.size))
 cltaug_mm_fiducial_coarse = np.zeros((chis.size, ls.size))
 cltaug_mm_dndz_coarse = np.zeros((100, chis.size, ls.size))
-for l, ell in enumerate(ls):
-	Pmms[:,l] = np.diagonal(np.flip(Pmm_full.P(results.redshift_at_comoving_radial_distance(chis), (ell+0.5)/chis[::-1], grid=True), axis=1))
-	m_to_e = np.diagonal(np.flip(bias_e2(results.redshift_at_comoving_radial_distance(chis), (ell+0.5)/chis[::-1]), axis=1))
+# for l, ell in enumerate(ls):
+# 	Pmms[:,l] = np.diagonal(np.flip(Pmm_full.P(results.redshift_at_comoving_radial_distance(chis), (ell+0.5)/chis[::-1], grid=True), axis=1))
+# 	m_to_e = np.diagonal(np.flip(bias_e2(results.redshift_at_comoving_radial_distance(chis), (ell+0.5)/chis[::-1]), axis=1))
+# 	Pme_at_ell = Pmms[:,l] * m_to_e
+# 	cltaug_fiducial_coarse[:, l] = np.nan_to_num(Pme_at_ell * galaxy_window * taud_window / chis**2, posinf=0.) * bin_width * maplist.ngbar
+# 	cltaug_mm_fiducial_coarse[:, l] = np.nan_to_num(Pmms[:,l]  * galaxy_window * taud_window / chis**2, posinf=0.) * bin_width * maplist.ngbar
+# 	cltaug_dndz_coarse[:,:,l] = np.nan_to_num(Pme_at_ell[np.newaxis,:] * galaxy_window_dndz * taud_window / chis[np.newaxis,:]**2, posinf=0.) * bin_width * maplist.ngbar
+# 	cltaug_mm_dndz_coarse[:,:,l] = np.nan_to_num(Pmms[np.newaxis,:,l] * galaxy_window_dndz * taud_window / chis[np.newaxis,:]**2, posinf=0.) * bin_width * maplist.ngbar
+for l, ell in enumerate(ls):  # Removed refs to bin_width and ngbar. ngbar not to return as long as unWISE is overdensity map, bin_width multiplied back in after velocity calcs
+	Pmms[:,l] = np.diagonal(np.flip(Pmm_full.P(zs, (ell+0.5)/chis[::-1], grid=True), axis=1))
+	m_to_e = np.diagonal(np.flip(bias_e2(zs, (ell+0.5)/chis[::-1]), axis=1))
 	Pme_at_ell = Pmms[:,l] * m_to_e
-	cltaug_fiducial_coarse[:, l] = np.nan_to_num(Pme_at_ell * galaxy_window * taud_window / chis**2, posinf=0.) * bin_width * maplist.ngbar
-	cltaug_mm_fiducial_coarse[:, l] = np.nan_to_num(Pmms[:,l]  * galaxy_window * taud_window / chis**2, posinf=0.) * bin_width * maplist.ngbar
-	cltaug_dndz_coarse[:,:,l] = np.nan_to_num(Pme_at_ell[np.newaxis,:] * galaxy_window_dndz * taud_window / chis[np.newaxis,:]**2, posinf=0.) * bin_width * maplist.ngbar
-	cltaug_mm_dndz_coarse[:,:,l] = np.nan_to_num(Pmms[np.newaxis,:,l] * galaxy_window_dndz * taud_window / chis[np.newaxis,:]**2, posinf=0.) * bin_width * maplist.ngbar
+	cltaug_fiducial_coarse[:, l] = np.nan_to_num(Pme_at_ell * galaxy_window * taud_window / chis**2, posinf=0.)
+	cltaug_mm_fiducial_coarse[:, l] = np.nan_to_num(Pmms[:,l]  * galaxy_window * taud_window / chis**2, posinf=0.)
+	cltaug_dndz_coarse[:,:,l] = np.nan_to_num(Pme_at_ell[np.newaxis,:] * galaxy_window_dndz * taud_window / chis[np.newaxis,:]**2, posinf=0.)
+	cltaug_mm_dndz_coarse[:,:,l] = np.nan_to_num(Pmms[np.newaxis,:,l] * galaxy_window_dndz * taud_window / chis[np.newaxis,:]**2, posinf=0.)
+
 
 cltaug_fiducial = interp1d(ls, cltaug_fiducial_coarse[zbar_index,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1))
 cltaug_dndz = np.array([interp1d(ls, cltaug_dndz_coarse[i,zbar_index,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1)) for i in np.arange(100)])
 cltaug_fiducial_mm = interp1d(ls, cltaug_mm_fiducial_coarse[zbar_index,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1))
 cltaug_dndz_mm = np.array([interp1d(ls, cltaug_mm_dndz_coarse[i,zbar_index,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1)) for i in np.arange(100)])
 
-### Velocity
-print('Computing true velocity...')
-velocity_compute_ells = np.unique(np.concatenate([np.arange(1,16),np.geomspace(16,35,5)]).astype(int))
-clv = np.zeros((velocity_compute_ells.shape[0],redshifts.shape[0],redshifts.shape[0]))
-PKv = camb.get_matter_power_interpolator(pars,hubble_units=False, k_hunit=False, var1='v_newtonian_cdm',var2='v_newtonian_cdm')
-for l in range(velocity_compute_ells.shape[0]):
-	print('    @ l = %d' % velocity_compute_ells[l])
-	for z1 in range(redshifts.shape[0]):
-		for z2 in range(redshifts.shape[0]):
-			integrand_k = scipy.special.spherical_jn(velocity_compute_ells[l],ks*chis[z1])*scipy.special.spherical_jn(velocity_compute_ells[l],ks*chis[z2]) * (h[z1]/(1+redshifts[z1]))*(h[z2]/(1+redshifts[z2])) * np.sqrt(PKv.P(redshifts[z1],ks)*PKv.P(redshifts[z2],ks))
-			clv[l,z1,z2] = (2./np.pi)*np.trapz(integrand_k,ks)
 
-### Reconstructions
-print('Processing CMB reconstructions...')
-map_container = {'100GHz' : maplist.input_T100,
-				 '143GHz' : maplist.input_T143,
-				 '217GHz' : maplist.input_T217,
-				 '353GHz' : maplist.input_T353,
-				 '100GHz_noSMICA' : maplist.input_T100_noCMB_SMICA,
-				 '143GHz_noSMICA' : maplist.input_T143_noCMB_SMICA,
-				 '217GHz_noSMICA' : maplist.input_T217_noCMB_SMICA,
-				 '353GHz_noSMICA' : maplist.input_T353_noCMB_SMICA,
-				 '100GHz_noCOMMANDER' : maplist.input_T100_noCMB_COMMANDER,
-				 '143GHz_noCOMMANDER' : maplist.input_T143_noCMB_COMMANDER,
-				 '217GHz_noCOMMANDER' : maplist.input_T217_noCMB_COMMANDER,
-				 '353GHz_noCOMMANDER' : maplist.input_T353_noCMB_COMMANDER,
-				 '100GHz_thermaldust' : maplist.input_T100_thermaldust,
-				 '143GHz_thermaldust' : maplist.input_T143_thermaldust,
-				 '217GHz_thermaldust' : maplist.input_T217_thermaldust,
-				 '353GHz_thermaldust' : maplist.input_T353_thermaldust,
-				 '353GHz_CIB' : maplist.input_T353_CIB}
 
-beam_container = {'100GHz' : maplist.T100beam,
-				  '143GHz' : maplist.T143beam,
-				  '217GHz' : maplist.T217beam,
-				  '353GHz' : maplist.T353beam,
-				  '100GHz_noSMICA' : maplist.T100beam,
-				  '143GHz_noSMICA' : maplist.T143beam,
-				  '217GHz_noSMICA' : maplist.T217beam,
-				  '353GHz_noSMICA' : maplist.T353beam,
-				  '100GHz_noCOMMANDER' : maplist.T100beam,
-				  '143GHz_noCOMMANDER' : maplist.T143beam,
-				  '217GHz_noCOMMANDER' : maplist.T217beam,
-				  '353GHz_noCOMMANDER' : maplist.T353beam,
-				  '100GHz_thermaldust' : maplist.T100beam,
-				  '143GHz_thermaldust' : maplist.T143beam,
-				  '217GHz_thermaldust' : maplist.T217beam,
-				  '353GHz_thermaldust' : maplist.T353beam,
-				  '353GHz_CIB' : maplist.SMICAbeam}
 
-reconstructions = {}
-noises = {}
-recon_Cls = {}
+
+
+
+
+
 
 print('    Preprocessing SMICA, COMMANDER, and unWISE maps')
 maplist.processed_alms['SMICA'] = maplist.mask_and_debeam(maplist.input_SMICA, np.ones(maplist.mask.size), maplist.SMICAbeam)
 maplist.processed_alms['COMMANDER'] = maplist.mask_and_debeam(maplist.input_COMMANDER, np.ones(maplist.mask.size), maplist.SMICAbeam)
-maplist.processed_alms['unWISE'] = hp.map2alm(maplist.input_unWISE, lmax=4000)
+N_tot = np.sum(maplist.input_unWISE * maplist.mask)
+n_av = N_tot / np.sum(maplist.mask)
 
-maplist.Cls['SMICA'] = maplist.alm2cl(maplist.mask_and_debeam(maplist.input_SMICA, maplist.mask_planck, maplist.SMICAbeam), maplist.fsky_planck)
-maplist.Cls['COMMANDER'] = maplist.alm2cl(maplist.mask_and_debeam(maplist.input_COMMANDER, maplist.mask_planck, maplist.SMICAbeam), maplist.fsky_planck)
-maplist.Cls['unWISE'] = hp.alm2cl(maplist.processed_alms['unWISE'])
+maplist.processed_alms['unWISE'] = hp.map2alm((maplist.input_unWISE-n_av)/n_av, lmax=4000)
+
+maplist.Cls['SMICA'] = maplist.alm2cl(maplist.mask_and_debeam(maplist.input_SMICA, maplist.mask_GAL080*maplist.mask_planck, maplist.SMICAbeam), sum(maplist.mask_GAL080*maplist.mask_planck)/maplist.mask_planck.size)
+maplist.Cls['COMMANDER'] = maplist.alm2cl(maplist.mask_and_debeam(maplist.input_COMMANDER, maplist.mask_GAL080*maplist.mask_planck, maplist.SMICAbeam), sum(maplist.mask_GAL080*maplist.mask_planck)/maplist.mask_planck.size)
+maplist.Cls['unWISE'] = hp.alm2cl(hp.map2alm(maplist.mask_unwise*(maplist.input_unWISE-n_av)/n_av, lmax=4000)) / (sum(maplist.mask_unwise)/maplist.mask_unwise.size)
+
+# for key in maplist.map_container:
+# 	print('    Preprocessing %s' % key)
+# 	maplist.processed_alms[key] = maplist.mask_and_debeam(maplist.map_container[key], maplist.mask, maplist.beam_container[key])
+# 	maplist.processed_alms[key+'_CIBmask'] = maplist.mask_and_debeam(maplist.map_container[key], maplist.mask_huge, maplist.beam_container[key])
+# 	maplist.Cls[key] = maplist.alm2cl(maplist.processed_alms[key], maplist.fsky)
+# 	maplist.Cls[key+'_CIBmask'] = maplist.alm2cl(maplist.processed_alms[key+'_CIBmask'], maplist.fsky_huge)
+
+### Velocity
+# windowed velocity should go here since cltaug must be multiplied by bin_width before being used elsewhere
+print('    Computing windowed velocity')
+velocity_compute_ells = np.unique(np.concatenate([np.arange(1,16),np.geomspace(16,35,5)]).astype(int))
+
+#### Computing dchi:
+# We want to normalize the velocity window to be 1 over the chi bin. So consider eq. A25 from the Rich paper. Set LHS to 1.
+# If we treat dchi as a constant, we integrate RHS and can bring dchi up to the LHS so eq. A25 becomes:
+# dchi = np.trapz(window_v, chis)
+# Then we have dchi and to fully reproduce eq. A25 we simply divide it out:
+# window_v /= dchi
+
+
+### Velocity
+window_v = {key : np.zeros(velocity_compute_ells.size) for key in ('SMICA', 'COMMANDER')}
+window_v_mm = {key : np.zeros(velocity_compute_ells.size) for key in ('SMICA', 'COMMANDER')}
+dchis = {key : 0. for key in ('SMICA', 'COMMANDER')}
+dchis_mm = {key : 0. for key in ('SMICA', 'COMMANDER')}
+
+for key in window_v:
+	print('velocity: ' + str(key))
+	window_v[key], window_v_mm[key] = compute_velocity_window(results, Pmm_full, galaxy_window, maplist.Cls[key], maplist.Cls['unWISE'], cltaug_fiducial, chis, zbar_index)
+	dchis[key] = np.trapz(window_v[key], chis)
+	dchis_mm[key] = np.trapz(window_v_mm[key], chis)
+	window_v[key] /= dchis[key]
+	window_v_mm[key] /= dchis_mm[key]
+
+print('Computing true velocity...')
+nks = 1000
+ks = np.logspace(-4,1,nks)  # ks that go into spectra integrals below
+#clv = np.zeros((velocity_compute_ells.shape[0],redshifts.shape[0],redshifts.shape[0]))
+PKv = camb.get_matter_power_interpolator(pars,hubble_units=False, k_hunit=False, var1='v_newtonian_cdm',var2='v_newtonian_cdm')
+Cvintegrand = {key : np.zeros((len(velocity_compute_ells),len(ks))) for key in ('SMICA', 'COMMANDER')}
+Cvintegrand_mm = {key : np.zeros((len(velocity_compute_ells),len(ks))) for key in ('SMICA', 'COMMANDER')}
+#for l in range(velocity_compute_ells.shape[0]):
+for i in range(velocity_compute_ells.shape[0]):
+	print('    @ l = %d' % velocity_compute_ells[i])
+	for key in ('SMICA', 'COMMANDER'):
+		for j in range(len(ks)):
+		    Cvintegrand[key][i,j] = np.trapz(window_v[key] * ( hs/(1+zs) ) * np.sqrt(PKv.P(zs,ks[j])) * (velocity_compute_ells[i] * scipy.special.spherical_jn(velocity_compute_ells[i]-1,ks[j]*chis) - (velocity_compute_ells[i]+1) * scipy.special.spherical_jn(velocity_compute_ells[i]+1,ks[j]*chis) ),chis)
+		    Cvintegrand_mm[key][i,j] = np.trapz(window_v_mm[key] * ( hs/(1+zs) ) * np.sqrt(PKv.P(zs,ks[j])) * (velocity_compute_ells[i] * scipy.special.spherical_jn(velocity_compute_ells[i]-1,ks[j]*chis) - (velocity_compute_ells[i]+1) * scipy.special.spherical_jn(velocity_compute_ells[i]+1,ks[j]*chis) ),chis)
+	#for z1 in range(redshifts.shape[0]):
+	#	for z2 in range(redshifts.shape[0]):
+	#		integrand_k = scipy.special.spherical_jn(velocity_compute_ells[l],ks*chis[z1])*scipy.special.spherical_jn(velocity_compute_ells[l],ks*chis[z2]) * (h[z1]/(1+redshifts[z1]))*(h[z2]/(1+redshifts[z2])) * np.sqrt(PKv.P(redshifts[z1],ks)*PKv.P(redshifts[z2],ks))
+	#		clv[l,z1,z2] = (2./np.pi)*np.trapz(integrand_k,ks)
+
+clv_windowed = {key : np.zeros(len(velocity_compute_ells)) for key in ('SMICA', 'COMMANDER')}
+clv_windowed_mm = {key : np.zeros(len(velocity_compute_ells)) for key in ('SMICA', 'COMMANDER')}
+for i in range(len(velocity_compute_ells)):
+	for key in ('SMICA', 'COMMANDER'):
+		clv_windowed[key][i] = (2. / np.pi) * np.trapz(Cvintegrand[key][i,:]*Cvintegrand[key][i,:],ks) / ((2.*velocity_compute_ells[i]+1)**2)
+		clv_windowed_mm[key][i] = (2. / np.pi) * np.trapz(Cvintegrand_mm[key][i,:]*Cvintegrand_mm[key][i,:],ks) / ((2.*velocity_compute_ells[i]+1)**2)
+
+### FROM HERE ON OUT! dchi is TT-specific so wherever cltaug_fiducial is used it must be cltaug_fiducial*dchi[case]
+
+# clv_windowed = {key : np.zeros(velocity_compute_ells.size) for key in ('COMMANDER', '100GHz', '143GHz', '217GHz', '353GHz')}
+# clv_windowed_mm = {key : np.zeros(velocity_compute_ells.size) for key in ('COMMANDER', '100GHz', '143GHz', '217GHz', '353GHz')}
+# clv_windowed['COMMANDER'], clv_windowed_mm['COMMANDER'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['COMMANDER'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+# clv_windowed['100GHz'], clv_windowed_mm['100GHz'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['100GHz'] / pars.TCMB**2, clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+# clv_windowed['143GHz'], clv_windowed_mm['143GHz'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['143GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+# clv_windowed['217GHz'], clv_windowed_mm['217GHz'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['217GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+# clv_windowed['353GHz'], clv_windowed_mm['353GHz'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['353GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
+
+
+### Reconstructions
+print('Processing CMB reconstructions...')
+reconstructions = {}
+noises = {}
+recon_Cls = {}
+recon_lmax = 150
 
 print('    Computing fiducial reconstructions')
-noises['SMICA'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['SMICA'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial)
-noises['COMMANDER'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['COMMANDER'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial)
-reconstructions['SMICA'] = combine_alm(maplist.processed_alms['SMICA'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['SMICA'], maplist.Cls['unWISE'], cltaug_fiducial, noises['SMICA'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
-reconstructions['COMMANDER'] = combine_alm(maplist.processed_alms['COMMANDER'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['COMMANDER'], maplist.Cls['unWISE'], cltaug_fiducial, noises['COMMANDER'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+# noises['SMICA'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['SMICA'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial)
+# noises['COMMANDER'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['COMMANDER'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial)
+# reconstructions['SMICA'] = combine_alm(maplist.processed_alms['SMICA'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['SMICA'], maplist.Cls['unWISE'], cltaug_fiducial, noises['SMICA'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+# reconstructions['COMMANDER'] = combine_alm(maplist.processed_alms['COMMANDER'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['COMMANDER'], maplist.Cls['unWISE'], cltaug_fiducial, noises['COMMANDER'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+# recon_Cls['SMICA'] = maplist.alm2cl(hp.map2alm(reconstructions['SMICA'], lmax=recon_lmax), maplist.fsky)
+# recon_Cls['COMMANDER'] = maplist.alm2cl(hp.map2alm(reconstructions['COMMANDER'], lmax=recon_lmax), maplist.fsky)
+# recon_Cls['SMICAxCOMMANDER'] = hp.alm2cl(hp.map2alm(reconstructions['SMICA'], lmax=recon_lmax), hp.map2alm(reconstructions['COMMANDER'], lmax=recon_lmax)) / maplist.fsky
+# noises['SMICA_mm'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['SMICA'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial_mm)
+# noises['COMMANDER_mm'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['COMMANDER'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial_mm)
+# reconstructions['SMICA_mm'] = combine_alm(maplist.processed_alms['SMICA'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['SMICA'], maplist.Cls['unWISE'], cltaug_fiducial_mm, noises['SMICA_mm'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+# reconstructions['COMMANDER_mm'] = combine_alm(maplist.processed_alms['COMMANDER'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['COMMANDER'], maplist.Cls['unWISE'], cltaug_fiducial_mm, noises['COMMANDER_mm'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+# recon_Cls['SMICAxCOMMANDER_mm'] = hp.alm2cl(hp.map2alm(reconstructions['SMICA_mm'], lmax=recon_lmax), hp.map2alm(reconstructions['COMMANDER_mm'], lmax=recon_lmax)) / maplist.fsky
+# recon_Cls['SMICA_mm'] = maplist.alm2cl(hp.map2alm(reconstructions['SMICA_mm'], lmax=recon_lmax), maplist.fsky)
+# recon_Cls['COMMANDER_mm'] = maplist.alm2cl(hp.map2alm(reconstructions['COMMANDER_mm'], lmax=recon_lmax), maplist.fsky)
+
+
+noises['SMICA'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['SMICA'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial*dchis['SMICA'])
+noises['COMMANDER'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['COMMANDER'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial*dchis['COMMANDER'])
+reconstructions['SMICA'] = combine_alm(maplist.processed_alms['SMICA'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['SMICA'], maplist.Cls['unWISE'], cltaug_fiducial*dchis['SMICA'], noises['SMICA'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+reconstructions['COMMANDER'] = combine_alm(maplist.processed_alms['COMMANDER'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['COMMANDER'], maplist.Cls['unWISE'], cltaug_fiducial*dchis['COMMANDER'], noises['COMMANDER'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
 recon_Cls['SMICA'] = maplist.alm2cl(hp.map2alm(reconstructions['SMICA'], lmax=recon_lmax), maplist.fsky)
 recon_Cls['COMMANDER'] = maplist.alm2cl(hp.map2alm(reconstructions['COMMANDER'], lmax=recon_lmax), maplist.fsky)
 recon_Cls['SMICAxCOMMANDER'] = hp.alm2cl(hp.map2alm(reconstructions['SMICA'], lmax=recon_lmax), hp.map2alm(reconstructions['COMMANDER'], lmax=recon_lmax)) / maplist.fsky
-noises['SMICA_mm'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['SMICA'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial_mm)
-noises['COMMANDER_mm'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['COMMANDER'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial_mm)
-reconstructions['SMICA_mm'] = combine_alm(maplist.processed_alms['SMICA'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['SMICA'], maplist.Cls['unWISE'], cltaug_fiducial_mm, noises['SMICA_mm'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
-reconstructions['COMMANDER_mm'] = combine_alm(maplist.processed_alms['COMMANDER'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['COMMANDER'], maplist.Cls['unWISE'], cltaug_fiducial_mm, noises['COMMANDER_mm'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+noises['SMICA_mm'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['SMICA'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial_mm*dchis_mm['SMICA'])
+noises['COMMANDER_mm'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['COMMANDER'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial_mm*dchis_mm['COMMANDER'])
+reconstructions['SMICA_mm'] = combine_alm(maplist.processed_alms['SMICA'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['SMICA'], maplist.Cls['unWISE'], cltaug_fiducial_mm*dchis_mm['SMICA'], noises['SMICA_mm'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+reconstructions['COMMANDER_mm'] = combine_alm(maplist.processed_alms['COMMANDER'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['COMMANDER'], maplist.Cls['unWISE'], cltaug_fiducial_mm*dchis_mm['COMMANDER'], noises['COMMANDER_mm'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
 recon_Cls['SMICAxCOMMANDER_mm'] = hp.alm2cl(hp.map2alm(reconstructions['SMICA_mm'], lmax=recon_lmax), hp.map2alm(reconstructions['COMMANDER_mm'], lmax=recon_lmax)) / maplist.fsky
 recon_Cls['SMICA_mm'] = maplist.alm2cl(hp.map2alm(reconstructions['SMICA_mm'], lmax=recon_lmax), maplist.fsky)
 recon_Cls['COMMANDER_mm'] = maplist.alm2cl(hp.map2alm(reconstructions['COMMANDER_mm'], lmax=recon_lmax), maplist.fsky)
 
-for key in map_container:
-	print('    Preprocessing %s' % key)
-	maplist.processed_alms[key] = maplist.mask_and_debeam(map_container[key], maplist.mask, beam_container[key])
-	maplist.processed_alms[key+'_CIBmask'] = maplist.mask_and_debeam(map_container[key], maplist.mask_huge, beam_container[key])
-	maplist.Cls[key] = maplist.alm2cl(maplist.processed_alms[key], maplist.fsky)
-	maplist.Cls[key+'_CIBmask'] = maplist.alm2cl(maplist.processed_alms[key+'_CIBmask'], maplist.fsky_huge)
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18,6))
+ax1.semilogy(recon_Cls['SMICA'][2:])
+ax1.semilogy(np.repeat(noises['SMICA'], recon_Cls['SMICA'].size-2), ls='--', c='k')
+ax2.semilogy(recon_Cls['COMMANDER'][2:])
+ax2.semilogy(np.repeat(noises['COMMANDER'], recon_Cls['COMMANDER'].size-2), ls='--', c='k')
+ax1.set_xlim(2,150)
+ax2.set_xlim(2,50)
+ax1.set_title('SMICA')
+ax2.set_title('COMMANDER')
+y1, y2 = ax1.get_ylim()
+ax1.semilogy(velocity_compute_ells, clv_windowed['SMICA'])
+ax1.set_ylim(y1,y2)
+y1,y2 = ax2.get_ylim()
+ax2.semilogy(velocity_compute_ells, clv_windowed['COMMANDER'])
+ax2.set_ylim(y1,y2)
+plt.savefig('fiducial_reconstructions')
 
-for key in map_container:
+
+ellbar = 2000
+ellbar_ind = np.argmin(np.abs(ellbar-ls))
+Pme = np.zeros((ls.size, 500))
+Pme_at_chibar = np.zeros(ls.size)
+for l, ell in enumerate(ls):
+	m_to_e = np.diagonal(np.flip(bias_e2(zs, (ell+0.5)/chis[::-1]), axis=1))
+	Pme[l] = Pmms[:,l] * m_to_e
+	Pme_at_chibar = Pmms[zbar_index,l] * m_to_e
+
+Pme_at_ellbar = Pmms[:,ellbar_ind] * np.diagonal(np.flip(bias_e2(zs, (ls[ellbar_ind]+0.5)/chis[::-1]), axis=1))
+Pme_at_chibar_at_ellbar = Pmms[zbar_index,ellbar_ind] * np.diagonal(np.flip(bias_e2(zs, (ls[ellbar_ind]+0.5)/chis[::-1]), axis=1))[zbar_index]
+
+LHS_eq35 = Pme / Pme_at_ellbar[np.newaxis,:]
+RHS_eq35 = Pme_at_chibar / Pme_at_chibar_at_ellbar
+
+fig, (ax1, ax2) = plt.subplots(1,2,figsize=(12,6))
+for l in LHS_eq35:
+	ax1.semilogy(chis, l, c='gray',alpha=0.75)
+
+ax2.semilogy(chis, RHS_eq35)
+ax1.set_title(r'$\frac{P_{me}\left(\chi,k=\frac{\ell+1/2}{\chi}\right)}{P_{me}\left(\chi,k=\frac{\bar{\ell}+1/2}{\chi}\right)}$',fontsize=22)
+ax2.set_title(r'$\frac{P_{me}\left(\bar{\chi},k=\frac{\ell+1/2}{\bar{\chi}}\right)}{P_{me}\left(\bar{\chi},k=\frac{\bar{\ell}+1/2}{\bar{\chi}}\right)}$',fontsize=22)
+plt.tight_layout()
+plt.savefig('eq_35')
+
+print(kaskalamnikat)
+for key in maplist.map_container:
 	print('    Reconstructing %s' % key)
 	master_cltt = maplist.Cls[key.split('_')[0]]  # Theory ClTT should be on the full frequency sky
 	noises[key] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=master_cltt, clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial)
@@ -400,14 +607,6 @@ for key in map_container:
 maplist.stored_maps['recon_SMICA'] = maplist.lowpass_filter(reconstructions['SMICA'], lmax=25)
 maplist.stored_maps['recon_COMMANDER'] = maplist.lowpass_filter(reconstructions['COMMANDER'], lmax=25)
 
-print('    Computing windowed velocity')
-clv_windowed = {key : np.zeros(velocity_compute_ells.size) for key in ('COMMANDER', '100GHz', '143GHz', '217GHz', '353GHz')}
-clv_windowed_mm = {key : np.zeros(velocity_compute_ells.size) for key in ('COMMANDER', '100GHz', '143GHz', '217GHz', '353GHz')}
-clv_windowed['COMMANDER'], clv_windowed_mm['COMMANDER'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['COMMANDER'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
-clv_windowed['100GHz'], clv_windowed_mm['100GHz'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['100GHz'] / pars.TCMB**2, clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
-clv_windowed['143GHz'], clv_windowed_mm['143GHz'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['143GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
-clv_windowed['217GHz'], clv_windowed_mm['217GHz'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['217GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
-clv_windowed['353GHz'], clv_windowed_mm['353GHz'] = compute_windowed_velocity(results, Pmm_full, galaxy_window, clv, cltt=maplist.Cls['353GHz'], clgg=maplist.Cls['unWISE'], cltaug=cltaug_fiducial, sample_ells=velocity_compute_ells, chis=chis, chibar=chibar, zbar_index=zbar_index, bin_width=bin_width)
 
 print('Post-processing: computing statistics and lowpass-filtered statistics')
 # Common functions
