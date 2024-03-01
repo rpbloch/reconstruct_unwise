@@ -181,7 +181,8 @@ def Noise_vr_diag(lmax, alpha, gamma, ell, cltt, clgg_binned, cltaudg_binned):
                 terms += term_entry
     return (2*ell+1) / terms
 
-def combine_alm(dTlm, dlm, mask, ClTT, Clgg, Cltaudg, Noise, lmax, nside_out, convert_K=False):
+
+def combine_alm(dTlm, dlm, mask, ClTT, Clgg, Cltaudg, Noise, lmax, nside_out, convert_K=False, fitval=False):
     ClTT_filter = ClTT.copy()[:lmax+1]
     Clgg_filter = Clgg.copy()[:lmax+1]
     Cltaudg = Cltaudg.copy()[:lmax+1]
@@ -196,7 +197,7 @@ def combine_alm(dTlm, dlm, mask, ClTT, Clgg, Cltaudg, Noise, lmax, nside_out, co
     outmap.mask = np.logical_not(mask)
     if convert_K:  # output map has units of K
         outmap /= 2.725
-    return hp.remove_dipole(outmap, fitval=False)
+    return hp.remove_dipole(outmap, fitval=fitval)
 
 def bias_e2(z, k):  # Note: matt's code takes in chi and ell in limber approximation replacement for k. Is this OK? Leaving alone for now.
     bstar2 = lambda z : 0.971 - 0.013*z
@@ -439,6 +440,12 @@ maplist.Cls['unWISE'] = hp.alm2cl(hp.map2alm(maplist.mask_unwise*(maplist.input_
 # 	maplist.Cls[key] = maplist.alm2cl(maplist.processed_alms[key], maplist.fsky)
 # 	maplist.Cls[key+'_CIBmask'] = maplist.alm2cl(maplist.processed_alms[key+'_CIBmask'], maplist.fsky_huge)
 
+for key in (maplist.map_container):
+	if (key not in maplist.Cls) and  ('COMMANDER' not in key):
+	 	print('    Preprocessing %s' % key)
+	 	maplist.processed_alms[key] = maplist.mask_and_debeam(maplist.map_container[key], np.ones(maplist.mask.size), maplist.beam_container[key])
+	 	maplist.Cls[key] = maplist.alm2cl(maplist.processed_alms[key], 1.)
+
 ### Velocity
 # windowed velocity should go here since cltaug must be multiplied by bin_width before being used elsewhere
 print('    Computing windowed velocity')
@@ -460,7 +467,7 @@ dchis_mm = {key : 0. for key in ('SMICA', 'COMMANDER')}
 
 for key in window_v:
 	print('velocity: ' + str(key))
-	window_v[key], window_v_mm[key] = compute_velocity_window(results, Pmm_full, galaxy_window, maplist.Cls[key], maplist.Cls['unWISE'], cltaug_fiducial, chis, zbar_index)
+	window_v[key], _ = compute_velocity_window(results, Pmm_full, galaxy_window, maplist.Cls[key], maplist.Cls['unWISE'], cltaug_fiducial, chis, zbar_index)
 	dchis[key] = np.trapz(window_v[key], chis)
 	dchis_mm[key] = np.trapz(window_v_mm[key], chis)
 	window_v[key] /= dchis[key]
@@ -567,7 +574,7 @@ Pme_at_chibar = np.zeros(ls.size)
 for l, ell in enumerate(ls):
 	m_to_e = np.diagonal(np.flip(bias_e2(zs, (ell+0.5)/chis[::-1]), axis=1))
 	Pme[l] = Pmms[:,l] * m_to_e
-	Pme_at_chibar = Pmms[zbar_index,l] * m_to_e
+	Pme_at_chibar[l] = Pmms[zbar_index,l] * m_to_e[zbar_index]
 
 Pme_at_ellbar = Pmms[:,ellbar_ind] * np.diagonal(np.flip(bias_e2(zs, (ls[ellbar_ind]+0.5)/chis[::-1]), axis=1))
 Pme_at_chibar_at_ellbar = Pmms[zbar_index,ellbar_ind] * np.diagonal(np.flip(bias_e2(zs, (ls[ellbar_ind]+0.5)/chis[::-1]), axis=1))[zbar_index]
@@ -575,15 +582,74 @@ Pme_at_chibar_at_ellbar = Pmms[zbar_index,ellbar_ind] * np.diagonal(np.flip(bias
 LHS_eq35 = Pme / Pme_at_ellbar[np.newaxis,:]
 RHS_eq35 = Pme_at_chibar / Pme_at_chibar_at_ellbar
 
-fig, (ax1, ax2) = plt.subplots(1,2,figsize=(12,6))
-for l in LHS_eq35:
-	ax1.semilogy(chis, l, c='gray',alpha=0.75)
+plt.figure()
+for l, LHSval in enumerate(LHS_eq35):
+	plt.semilogy(ls, LHS_eq35[:,l], c='gray',alpha=0.75)
 
-ax2.semilogy(chis, RHS_eq35)
-ax1.set_title(r'$\frac{P_{me}\left(\chi,k=\frac{\ell+1/2}{\chi}\right)}{P_{me}\left(\chi,k=\frac{\bar{\ell}+1/2}{\chi}\right)}$',fontsize=22)
-ax2.set_title(r'$\frac{P_{me}\left(\bar{\chi},k=\frac{\ell+1/2}{\bar{\chi}}\right)}{P_{me}\left(\bar{\chi},k=\frac{\bar{\ell}+1/2}{\bar{\chi}}\right)}$',fontsize=22)
+
+plt.semilogy(ls, RHS_eq35)
 plt.tight_layout()
 plt.savefig('eq_35')
+
+
+cltaudg = np.array([interp1d(ls, cltaug_fiducial_coarse[i,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1)) for i in np.arange(chis.size)])
+
+
+lmax_eq14 = maplist.lmax+1
+top_terms = np.zeros(chis.size)
+bottom_terms = 0
+for l2 in np.arange(lmax_eq14):
+    for l1 in np.arange(np.abs(l2-ell),l2+ell+1):
+        if l1 > lmax_eq14-1 or l1 <2:   #triangle rule
+            continue
+        common_factor = ((2*l1+1)*(2*l2+1)*(2*ell+1))*wigner_symbol(ell, l1, l2)**2
+        top_contribution    = common_factor * cltaug_fiducial[l2]*dchis['SMICA']*cltaudg[:,l2] / (maplist.Cls['SMICA'][l1] * maplist.Cls['unWISE'][l2])
+        bottom_contribution = common_factor * ((cltaug_fiducial[l2]*dchis['SMICA'])**2) / (maplist.Cls['SMICA'][l1] * maplist.Cls['unWISE'][l2])
+        if (np.isfinite(top_contribution).sum() == top_contribution.size) and (np.isfinite(bottom_contribution)):
+            top_terms += top_contribution
+            bottom_terms += bottom_contribution
+
+eq14_window_full = top_terms / bottom_terms
+
+plt.figure(figsize=(6,4))
+plotdata = dchis['SMICA'] * eq14_window_full
+plt.plot(zs, plotdata, label=r'$\Delta\chi\,W_v\left(\chi\right)$')
+plt.plot(zs, galaxy_window*1e3, ls='--', c='k', label=r'$\left(10^3\,\mathrm{Mpc}\,W_g\left(z\right)\right)$')
+plt.xlabel('z')
+plt.xlim(0,1.7)
+plt.ylim(0,1.2)
+plt.legend()
+plt.tight_layout()
+plt.savefig('eq14')
+
+monopoles = {}
+dipoles = {}
+
+for key in (maplist.map_container):
+	if ('COMMANDER' not in key) and ('CIB' not in key):
+		print('reconstructing ' + key)
+		if key not in reconstructions.keys():
+			noises[key] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls[key], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial*dchis[key.split('_')[0]])
+			reconstructions[key], monopoles[key], dipoles[key] = combine_alm(maplist.processed_alms[key], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls[key], maplist.Cls['unWISE'], cltaug_fiducial*dchis[key.split('_')[0]], noises[key.split('_')[0]], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False, fitval=True)
+			recon_Cls[key] = maplist.alm2cl(hp.map2alm(reconstructions[key], lmax=recon_lmax), maplist.fsky)
+
+plt.figure()
+plt.semilogy(recon_Cls['100GHz'][2:4000])
+plt.semilogy(np.repeat(noises['100GHz']/2.725**4, 3998))
+plt.savefig('test')
+
+plotdata = [monopoles[key] for key in ('100GHz', '143GHz', '217GHz')]
+plotdata_noSMICA = [monopoles[key] for key in ('100GHz_noSMICA', '143GHz_noSMICA', '217GHz_noSMICA')]
+plotdata_thermaldust = [monopoles[key] for key in ('100GHz_thermaldust', '143GHz_thermaldust', '217GHz_thermaldust')]
+plt.figure()
+plt.plot(plotdata, label='Total')
+plt.plot(plotdata_noSMICA, label='All foregrounds')
+plt.plot(plotdata_thermaldust, label='Thermal dust')
+plt.xticks(ticks=(0,1,2),labels=('100GHz', '143GHz', '217GHz'))
+plt.legend()
+plt.savefig('monopoles')
+
+
 
 print(kaskalamnikat)
 for key in maplist.map_container:
