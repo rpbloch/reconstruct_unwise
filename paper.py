@@ -242,32 +242,33 @@ def bias_e2(z, k):  # Note: matt's code takes in chi and ell in limber approxima
         bias_squared[zid, :] = bstar2(redshift) / ( 1 + (k/kstar(redshift))**gamma(redshift) )
     return np.sqrt(bias_squared)
 
-def compute_velocity_window(results, Pmm_full, galaxy_window, cltt, clgg, cltaug, chis, zbar_index):
+
+def compute_common_velocity_factors(Pmm_full, zs, chis, spectra_lmax):
+	Pmm_at_ellprime = np.zeros((zs.size, spectra_lmax))
+	m_to_e_factor = np.zeros((zs.size, spectra_lmax))
+	for l2 in np.arange(spectra_lmax):
+		Pmm_at_ellprime[:, l2] = np.diagonal(np.flip(Pmm_full.P(zs, (l2+0.5)/chis[::-1], grid=True), axis=1))
+		m_to_e_factor[:,l2] = np.diagonal(np.flip(bias_e2(zs, (l2+0.5)/chis[::-1]), axis=1))  # Converts Pmm to Pem
+	return Pmm_at_ellprime, m_to_e_factor
+
+def compute_velocity_window(Pmm, m_to_e, galaxy_window, cltt, clgg, cltaug, zs, chis, zbar_index):
     chibar = chis[zbar_index]
     terms = 0
     terms_with_me_entry = np.zeros(chis.size)
-    terms_with_mm_me_entry = np.zeros(chis.size)
     ell_const = 2
     for l2 in np.arange(spectra_lmax):
-    	Pmm_at_ellprime = np.diagonal(np.flip(Pmm_full.P(results.redshift_at_comoving_radial_distance(chis), (l2+0.5)/chis[::-1], grid=True), axis=1))
-    	Pem_at_ellprime = Pmm_at_ellprime * np.diagonal(np.flip(bias_e2(results.redshift_at_comoving_radial_distance(chis), (l2+0.5)/chis[::-1]), axis=1))  # Convert Pmm to Pem
-    	Pem_at_ellprime_at_zbar = Pem_at_ellprime[zbar_index]
     	for l1 in np.arange(np.abs(l2-ell_const),l2+ell_const+1):
     		if l1 > spectra_lmax-1 or l1 <2:   #triangle rule
     			continue
     		gamma_ksz = np.sqrt((2*l1+1)*(2*l2+1)*(2*ell_const+1)/(4*np.pi))*wigner_symbol(ell_const, l1, l2)*cltaug[l2]
-    		term_with_me_entry = (gamma_ksz*gamma_ksz/(cltt[l1]*clgg[l2])) * (Pem_at_ellprime/Pem_at_ellprime_at_zbar)
-    		term_with_mm_me_entry = (gamma_ksz*gamma_ksz/(cltt[l1]*clgg[l2])) * (Pmm_at_ellprime/Pem_at_ellprime_at_zbar)
+    		term_with_me_entry = (gamma_ksz*gamma_ksz/(cltt[l1]*clgg[l2])) * ((Pmm[:,l2]*m_to_e[:,l2])/(Pmm[zbar_index,l2]*m_to_e[zbar_index,l2]))
     		term_entry = (gamma_ksz*gamma_ksz/(cltt[l1]*clgg[l2]))
     		if np.isfinite(term_entry):
     			terms += term_entry
     			terms_with_me_entry += term_with_me_entry
-    			terms_with_mm_me_entry += term_with_mm_me_entry
     ratio_me_me = terms_with_me_entry / terms
-    ratio_mm_me = terms_with_mm_me_entry / terms
-    window_v = np.nan_to_num(  ( chibar**2 / chis**2 ) * ( galaxy_window / galaxy_window[zbar_index] ) * ( (1+results.redshift_at_comoving_radial_distance(chis))**2 / (1+results.redshift_at_comoving_radial_distance(chibar))**2 ) * ratio_me_me  )
-    window_v_mm = np.nan_to_num(  ( chibar**2 / chis**2 ) * ( galaxy_window / galaxy_window[zbar_index] ) * ( (1+results.redshift_at_comoving_radial_distance(chis))**2 / (1+results.redshift_at_comoving_radial_distance(chibar))**2 ) * ratio_mm_me  )
-    return window_v, window_v_mm
+    window_v = np.nan_to_num(  ( chibar**2 / chis**2 ) * ( galaxy_window / galaxy_window[zbar_index] ) * ( (1+zs)**2 / (1+zs[zbar_index])**2 ) * ratio_me_me  )
+    return window_v
 
 def compute_common(dTlm, ClTT, Clgg, lmax, nside_out):
 	ClTT_filter = ClTT.copy()[:lmax+1]
@@ -342,39 +343,39 @@ z_alex = np.array([float(l.split(' ')[0]) for l in dndz_data])
 dN_alex = np.array([float(l.split(' ')[1]) for l in dndz_data])
 dNdz_fiducial = interp1d(z_alex, dN_alex, kind= 'linear', bounds_error=False, fill_value=0)(results.redshift_at_comoving_radial_distance(chis))
 
-# dNdz_realization = np.zeros((100, chis.size))
-# for i in np.arange(100):
-# 	with open('data/unWISE/blue_dNdz_err/%s.txt' % i, 'r') as FILE:
-# 	    dndz_data = FILE.readlines()
-# 	z_alex_err = np.array([float(l.split(' ')[0]) for l in dndz_data])
-# 	dN_alex_err = np.array([float(l.split(' ')[1]) for l in dndz_data])
-# 	dNdz_err = interp1d(z_alex_err, dN_alex_err, kind= 'linear', bounds_error=False, fill_value=0)(results.redshift_at_comoving_radial_distance(chis))
-# 	dNdz_realization[i,:] = dNdz_err.copy()
+dNdz_realization = np.zeros((100, chis.size))
+for i in np.arange(100):
+	with open('data/unWISE/blue_dNdz_err/%s.txt' % i, 'r') as FILE:
+	    dndz_data = FILE.readlines()
+	z_alex_err = np.array([float(l.split(' ')[0]) for l in dndz_data])
+	dN_alex_err = np.array([float(l.split(' ')[1]) for l in dndz_data])
+	dNdz_err = interp1d(z_alex_err, dN_alex_err, kind= 'linear', bounds_error=False, fill_value=0)(results.redshift_at_comoving_radial_distance(chis))
+	dNdz_realization[i,:] = dNdz_err.copy()
 
 galaxy_window = galaxy_bias * dNdz_fiducial * results.h_of_z(zs)
-# galaxy_window_dndz = galaxy_bias[np.newaxis,:] * dNdz_realization * results.h_of_z(zs)
+galaxy_window_dndz = galaxy_bias[np.newaxis,:] * dNdz_realization * results.h_of_z(zs)
 zbar_index = np.abs(zs-np.average(z_alex,weights=dN_alex)).argmin()
 
 ls = np.unique(np.append(np.geomspace(1,spectra_lmax,200).astype(int), spectra_lmax))   # Duplicate of above if going back to old way
 cltaug_fiducial_coarse = np.zeros((chis.size, ls.size))
-# cltaug_dndz_coarse = np.zeros((100, chis.size, ls.size))
-# cltaug_mm_fiducial_coarse = np.zeros((chis.size, ls.size))
-# cltaug_mm_dndz_coarse = np.zeros((100, chis.size, ls.size))
+cltaug_dndz_coarse = np.zeros((100, chis.size, ls.size))
+cltaug_mm_fiducial_coarse = np.zeros((chis.size, ls.size))
+cltaug_mm_dndz_coarse = np.zeros((100, chis.size, ls.size))
 
-for l, ell in enumerate(ls):  # Removed refs to bin_width and ngbar. ngbar not to return as long as unWISE is overdensity map, bin_width multiplied back in after velocity calcs
+for l, ell in enumerate(ls):
 	Pmms[:,l] = np.diagonal(np.flip(Pmm_full.P(zs, (ell+0.5)/chis[::-1], grid=True), axis=1))
 	m_to_e = np.diagonal(np.flip(bias_e2(zs, (ell+0.5)/chis[::-1]), axis=1))
 	Pme_at_ell = Pmms[:,l] * m_to_e
 	cltaug_fiducial_coarse[:, l] = np.nan_to_num(Pme_at_ell * galaxy_window * taud_window / chis**2, posinf=0.)
-	# cltaug_mm_fiducial_coarse[:, l] = np.nan_to_num(Pmms[:,l]  * galaxy_window * taud_window / chis**2, posinf=0.)
-	# cltaug_dndz_coarse[:,:,l] = np.nan_to_num(Pme_at_ell[np.newaxis,:] * galaxy_window_dndz * taud_window / chis[np.newaxis,:]**2, posinf=0.)
-	# cltaug_mm_dndz_coarse[:,:,l] = np.nan_to_num(Pmms[np.newaxis,:,l] * galaxy_window_dndz * taud_window / chis[np.newaxis,:]**2, posinf=0.)
+	cltaug_mm_fiducial_coarse[:, l] = np.nan_to_num(Pmms[:,l]  * galaxy_window * taud_window / chis**2, posinf=0.)
+	cltaug_dndz_coarse[:,:,l] = np.nan_to_num(Pme_at_ell[np.newaxis,:] * galaxy_window_dndz * taud_window / chis[np.newaxis,:]**2, posinf=0.)
+	cltaug_mm_dndz_coarse[:,:,l] = np.nan_to_num(Pmms[np.newaxis,:,l] * galaxy_window_dndz * taud_window / chis[np.newaxis,:]**2, posinf=0.)
 
 
 cltaug_fiducial = interp1d(ls, cltaug_fiducial_coarse[zbar_index,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1))
-# cltaug_dndz = np.array([interp1d(ls, cltaug_dndz_coarse[i,zbar_index,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1)) for i in np.arange(100)])
-# cltaug_fiducial_mm = interp1d(ls, cltaug_mm_fiducial_coarse[zbar_index,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1))
-# cltaug_dndz_mm = np.array([interp1d(ls, cltaug_mm_dndz_coarse[i,zbar_index,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1)) for i in np.arange(100)])
+cltaug_dndz = np.array([interp1d(ls, cltaug_dndz_coarse[i,zbar_index,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1)) for i in np.arange(100)])
+cltaug_fiducial_mm = interp1d(ls, cltaug_mm_fiducial_coarse[zbar_index,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1))
+cltaug_dndz_mm = np.array([interp1d(ls, cltaug_mm_dndz_coarse[i,zbar_index,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1)) for i in np.arange(100)])
 
 print('Preprocessing SMICA, COMMANDER, and unWISE maps')
 maplist.processed_alms['SMICA'] = maplist.mask_and_debeam(maplist.input_SMICA, maplist.mask_cmb, maplist.SMICAbeam)
@@ -401,41 +402,76 @@ for key in maplist.map_container:
 
 ### Velocity
 # windowed velocity should go here since cltaug must be multiplied by bin_width before being used elsewhere
-print('Computing windowed velocity')
+
+Pmm_at_l2, m_to_e_at_l2 = compute_common_velocity_factors(Pmm_full, zs, chis, spectra_lmax)
+
+print('Computing velocity windows')
 freq_keys = ('SMICA', 'COMMANDER', '100GHz', '143GHz', '217GHz', '353GHz')
 velocity_compute_ells = np.unique(np.concatenate([np.arange(1,16),np.geomspace(16,35,5)]).astype(int))
-window_v = {key : np.zeros(velocity_compute_ells.size) for key in freq_keys}
+window_v = {key : np.zeros(chis.size) for key in freq_keys}
+window_v_mm = {key : np.zeros(chis.size) for key in freq_keys}  # Uncommented out since built into compute_velocity_window
+window_v_dndz = {key : np.zeros((100, chis.size)) for key in freq_keys}
+window_v_dndz_mm = {key : np.zeros((100, chis.size)) for key in freq_keys}
 dchis = {key : 0. for key in freq_keys}
-window_v_mm = {key : np.zeros(velocity_compute_ells.size) for key in freq_keys}  # Uncommented out since built into compute_velocity_window
-# dchis_mm = {key : 0. for key in freq_keys}
+dchis_mm = {key : 0. for key in freq_keys}
+dchis_dndz = {key : np.zeros(100) for key in freq_keys}
+dchis_dndz_mm = {key : np.zeros(100) for key in freq_keys}
 
 for key in freq_keys:  # Like theory noise, only base on total not each component
 	print('    ' + key)
-	window_v[key], window_v_mm[key] = compute_velocity_window(results, Pmm_full, galaxy_window, maplist.Cls[key], maplist.Cls['unWISE'], cltaug_fiducial, chis, zbar_index)
+	window_v[key] = compute_velocity_window(Pmm_at_l2, m_to_e_at_l2, galaxy_window, maplist.Cls[key], maplist.Cls['unWISE'], cltaug_fiducial, zs, chis, zbar_index)
+	window_v_mm[key] = compute_velocity_window(Pmm_at_l2, np.ones(m_to_e_at_l2.shape), galaxy_window, maplist.Cls[key], maplist.Cls['unWISE'], cltaug_fiducial, zs, chis, zbar_index)
 	dchis[key] = np.trapz(window_v[key], chis)
-	# dchis_mm[key] = np.trapz(window_v_mm[key], chis)
+	dchis_mm[key] = np.trapz(window_v_mm[key], chis)
 	window_v[key] /= dchis[key]
-	# window_v_mm[key] /= dchis_mm[key]
+	window_v_mm[key] /= dchis_mm[key]
+	for i in np.arange(100):
+		if i%10==1:
+			print('        %d of 100' % i)
+		window_v_dndz[key][i,:] = compute_velocity_window(Pmm_at_l2, m_to_e_at_l2, galaxy_window_dndz[i,:], maplist.Cls[key], maplist.Cls['unWISE'], cltaug_dndz[i,:], zs, chis, zbar_index)
+		window_v_dndz_mm[key][i,:] = compute_velocity_window(Pmm_at_l2, np.ones(m_to_e_at_l2.shape), galaxy_window_dndz[i,:], maplist.Cls[key], maplist.Cls['unWISE'], cltaug_dndz_mm[i,:], zs, chis, zbar_index)
+		dchis_dndz[key][i] = np.trapz(window_v_dndz[key][i,:], chis)
+		dchis_dndz_mm[key][i] = np.trapz(window_v_dndz_mm[key][i,:], chis)
+		window_v_dndz[key][i,:] /= dchis_dndz[key][i]
+		window_v_dndz_mm[key][i,:] /= dchis_dndz_mm[key][i]
 
-print('Computing true velocity...')
+
+print('Computing velocity signal...')
 nks = 1000
 ks = np.logspace(-4,1,nks)  # ks that go into spectra integrals below
 PKv = camb.get_matter_power_interpolator(pars,hubble_units=False, k_hunit=False, var1='v_newtonian_cdm',var2='v_newtonian_cdm')
+PKvs = np.zeros((velocity_compute_ells.size, zs.size, ks.size))
+for i in np.arange(velocity_compute_ells.size):
+	for j in np.arange(ks.size):
+		PKvs[i,:,j] = np.sqrt(PKv.P(zs,ks[j])) * (velocity_compute_ells[i] * scipy.special.spherical_jn(velocity_compute_ells[i]-1,ks[j]*chis) - (velocity_compute_ells[i]+1) * scipy.special.spherical_jn(velocity_compute_ells[i]+1,ks[j]*chis) )
+
 Cvintegrand = {key : np.zeros((len(velocity_compute_ells),len(ks))) for key in freq_keys}
-# Cvintegrand_mm = {key : np.zeros((len(velocity_compute_ells),len(ks))) for key in freq_keys}
+Cvintegrand_mm = {key : np.zeros((len(velocity_compute_ells),len(ks))) for key in freq_keys}
+Cvintegrand_dndz = {key : np.zeros((100,len(velocity_compute_ells),len(ks))) for key in freq_keys}
+Cvintegrand_dndz_mm = {key : np.zeros((100,len(velocity_compute_ells),len(ks))) for key in freq_keys}
 for i in range(velocity_compute_ells.shape[0]):
 	print('    @ l = %d' % velocity_compute_ells[i])
 	for key in freq_keys:
+		print(key)
 		for j in range(len(ks)):
-		    Cvintegrand[key][i,j] = np.trapz(window_v[key] * ( hs/(1+zs) ) * np.sqrt(PKv.P(zs,ks[j])) * (velocity_compute_ells[i] * scipy.special.spherical_jn(velocity_compute_ells[i]-1,ks[j]*chis) - (velocity_compute_ells[i]+1) * scipy.special.spherical_jn(velocity_compute_ells[i]+1,ks[j]*chis) ),chis)
-		    # Cvintegrand_mm[key][i,j] = np.trapz(window_v_mm[key] * ( hs/(1+zs) ) * np.sqrt(PKv.P(zs,ks[j])) * (velocity_compute_ells[i] * scipy.special.spherical_jn(velocity_compute_ells[i]-1,ks[j]*chis) - (velocity_compute_ells[i]+1) * scipy.special.spherical_jn(velocity_compute_ells[i]+1,ks[j]*chis) ),chis)
+			Cvintegrand[key][i,j] = np.trapz(window_v[key] * ( hs/(1+zs) ) * PKvs[i,:,j],chis)
+			Cvintegrand_mm[key][i,j] = np.trapz(window_v_mm[key] * ( hs/(1+zs) ) * PKvs[i,:,j],chis)
+			for n in np.arange(100):
+				Cvintegrand_dndz[key][n,i,j] = np.trapz(window_v_dndz[key][n,:] * ( hs/(1+zs) ) * PKvs[i,:,j],chis)
+				Cvintegrand_dndz_mm[key][n,i,j] = np.trapz(window_v_dndz_mm[key][n,:] * ( hs/(1+zs) ) * PKvs[i,:,j],chis)
 
 clv_windowed = {key : np.zeros(len(velocity_compute_ells)) for key in freq_keys}
-# clv_windowed_mm = {key : np.zeros(len(velocity_compute_ells)) for key in freq_keys}
+clv_windowed_mm = {key : np.zeros(len(velocity_compute_ells)) for key in freq_keys}
+clv_windowed_dndz = {key : np.zeros((100, len(velocity_compute_ells))) for key in freq_keys}
+clv_windowed_dndz_mm = {key : np.zeros((100, len(velocity_compute_ells))) for key in freq_keys}
 for i in range(len(velocity_compute_ells)):
 	for key in freq_keys:
 		clv_windowed[key][i] = (2. / np.pi) * np.trapz(Cvintegrand[key][i,:]*Cvintegrand[key][i,:],ks) / ((2.*velocity_compute_ells[i]+1)**2)
-		# clv_windowed_mm[key][i] = (2. / np.pi) * np.trapz(Cvintegrand_mm[key][i,:]*Cvintegrand_mm[key][i,:],ks) / ((2.*velocity_compute_ells[i]+1)**2)
+		clv_windowed_mm[key][i] = (2. / np.pi) * np.trapz(Cvintegrand_mm[key][i,:]*Cvintegrand_mm[key][i,:],ks) / ((2.*velocity_compute_ells[i]+1)**2)
+		for j in np.arange(100):
+			clv_windowed_dndz[key][j,i] = (2. / np.pi) * np.trapz(Cvintegrand_dndz[key][j,i,:]*Cvintegrand_dndz[key][j,i,:],ks) / ((2.*velocity_compute_ells[i]+1)**2)
+			clv_windowed_dndz_mm[key][j,i] = (2. / np.pi) * np.trapz(Cvintegrand_dndz_mm[key][j,i,:]*Cvintegrand_dndz_mm[key][j,i,:],ks) / ((2.*velocity_compute_ells[i]+1)**2)
+		
 
 ### FROM HERE ON OUT! dchi is TT-specific so wherever cltaug_fiducial is used it must be cltaug_fiducial*dchi[case]
 ### Reconstructions
