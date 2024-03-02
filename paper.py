@@ -53,7 +53,6 @@ import numpy as np
 import camb
 from camb import model
 import scipy
-from paper_analysis import Estimator, Cosmology
 from astropy.io import fits
 from astropy import units as u
 import healpy as hp
@@ -119,12 +118,13 @@ class maps(object):
 		self.mask_unwise = np.load('data/mask_unWISE_thres_v10.npy')
 		self.mask_GAL020 = hp.reorder(fits.open('data/masks/planck/HFI_Mask_GalPlane-apo0_2048_R2.00.fits')[1].data['GAL020'],n2r=True)
 		self.mask_GAL060 = hp.reorder(fits.open('data/masks/planck/HFI_Mask_GalPlane-apo0_2048_R2.00.fits')[1].data['GAL060'],n2r=True)
+		self.mask_GAL080 = hp.reorder(fits.open('data/masks/planck/HFI_Mask_GalPlane-apo0_2048_R2.00.fits')[1].data['GAL080'],n2r=True)
 		mask_CIB = np.ones(self.input_T353_CIB.size)
 		mask_CIB[np.where(np.isnan(fits.open('data/planck_data_testing/CIB/cib_fullmission_353.hpx.fits')[1].data['CIB']))] = 0
 		self.mask = self.mask_unwise * self.mask_planck
 		self.mask_huge = self.mask_GAL020.astype(np.float32) * self.mask_unwise * self.mask_planck * mask_CIB
-		self.mask_cmb = self.mask_planck * self.mask_GAL020
-		self.mask_freq = self.mask_planck * self.mask_GAL060
+		self.mask_cmb = self.mask_planck * self.mask_GAL080.astype(np.float32)
+		self.mask_freq = self.mask_planck * self.mask_GAL060.astype(np.float32)
 		####
 		# Map-based values
 		self.fsky = np.where(self.mask!=0)[0].size / self.mask.size
@@ -448,7 +448,7 @@ recon_lmax = 500
 print('    Computing fiducial reconstructions')
 for CMBtype in ('SMICA', 'COMMANDER'):
 	noises[CMBtype] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls[CMBtype], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial*dchis[CMBtype])
-	reconstructions[CMBtype] = combine_alm(maplist.processed_alms[CMBtype], maplist.processed_alms[CMBtype], maplist.mask, maplist.Cls[CMBtype], maplist.Cls['unWISE'], cltaug_fiducial*dchis[CMBtype], noises['SMICA'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+	reconstructions[CMBtype] = combine_alm(maplist.processed_alms[CMBtype], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls[CMBtype], maplist.Cls['unWISE'], cltaug_fiducial*dchis[CMBtype], noises['SMICA'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
 	recon_Cls[CMBtype] = maplist.alm2cl(hp.map2alm(reconstructions[CMBtype], lmax=recon_lmax), maplist.fsky)
 
 recon_Cls['SMICAxCOMMANDER'] = hp.alm2cl(hp.map2alm(reconstructions['SMICA'], lmax=recon_lmax), hp.map2alm(reconstructions['COMMANDER'], lmax=recon_lmax)) / maplist.fsky
@@ -500,6 +500,7 @@ for i, key in enumerate(freq_keys[2:]):
 		ax[i].semilogy(np.arange(152)[2:150], recon_Cls[key+case][2:150], label=key+case)
 	ax[i].semilogy(np.repeat(noises[key],148),ls='--',c='k')
 	ax[i].legend()
+	ax[i].set_title(key)
 
 plt.savefig('frequency_reconstructions')
 
@@ -508,12 +509,13 @@ plt.figure()
 plt.plot([monopoles[key] for key in ('100GHz', '143GHz', '217GHz', '353GHz')], label='Total')
 plt.plot([monopoles[key] for key in ('100GHz_noSMICA', '143GHz_noSMICA', '217GHz_noSMICA', '353GHz_noSMICA')], label='All foregrounds')
 plt.plot([monopoles[key] for key in ('100GHz_thermaldust', '143GHz_thermaldust', '217GHz_thermaldust', '353GHz_thermaldust')], label='Thermal dust')
-plt.plot([monopoles[key] for key in ('100GHz_freefree', '143GHz_freefree', '217GHz_freefree')], label='Free-free emission')
-plt.plot([monopoles[key] for key in ('100GHz_synchrotron', '143GHz_synchrotron', '217GHz_synchrotron')], label='Synchrotron radiation')
-plt.plot([monopoles[key] for key in ('100GHz_spindust', '143GHz_spindust', '217GHz_spindust')], label='Spinning dust emission')
-plt.plot([monopoles[key] for key in ('100GHz_kineticsz', '143GHz_kineticsz', '217GHz_kineticsz')], label='kSZ Effect')
-plt.plot([monopoles[key] for key in ('100GHz_clusterirps', '143GHz_clusterirps', '217GHz_clusterirps')], label='Infrared cluster point sources')
+plt.plot([monopoles[key] for key in ('100GHz_freefree', '143GHz_freefree', '217GHz_freefree', '353GHz_freefree')], label='Free-free emission')
+plt.plot([monopoles[key] for key in ('100GHz_synchrotron', '143GHz_synchrotron', '217GHz_synchrotron', '353GHz_synchrotron')], label='Synchrotron radiation')
+plt.plot([monopoles[key] for key in ('100GHz_spindust', '143GHz_spindust', '217GHz_spindust', '353GHz_spindust')], label='Spinning dust emission')
+plt.plot([monopoles[key] for key in ('100GHz_kineticsz', '143GHz_kineticsz', '217GHz_kineticsz', '353GHz_kineticsz')], label='kSZ Effect')
+plt.plot([monopoles[key] for key in ('100GHz_clusterirps', '143GHz_clusterirps', '217GHz_clusterirps', '353GHz_clusterirps')], label='Infrared cluster point sources')
 plt.xticks(ticks=(0,1,2,3),labels=('100GHz', '143GHz', '217GHz', '353GHz'))
+plt.title('Monopole magnitude')
 plt.legend()
 plt.savefig('monopoles')
 
@@ -522,14 +524,51 @@ plt.figure()
 plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz', '143GHz', '217GHz', '353GHz')], label='Total')
 plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_noSMICA', '143GHz_noSMICA', '217GHz_noSMICA', '353GHz_noSMICA')], label='All foregrounds')
 plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_thermaldust', '143GHz_thermaldust', '217GHz_thermaldust', '353GHz_thermaldust')], label='Thermal dust')
-plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_freefree', '143GHz_freefree', '217GHz_freefree')], label='Free-free emission')
-plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_synchrotron', '143GHz_synchrotron', '217GHz_synchrotron')], label='Synchrotron radiation')
-plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_spindust', '143GHz_spindust', '217GHz_spindust')], label='Spinning dust emission')
-plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_kineticsz', '143GHz_kineticsz', '217GHz_kineticsz')], label='kSZ Effect')
-plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_clusterirps', '143GHz_clusterirps', '217GHz_clusterirps')], label='Infrared cluster point sources')
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_freefree', '143GHz_freefree', '217GHz_freefree', '353GHz_freefree')], label='Free-free emission')
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_synchrotron', '143GHz_synchrotron', '217GHz_synchrotron', '353GHz_synchrotron')], label='Synchrotron radiation')
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_spindust', '143GHz_spindust', '217GHz_spindust', '353GHz_spindust')], label='Spinning dust emission')
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_kineticsz', '143GHz_kineticsz', '217GHz_kineticsz', '353GHz_kineticsz')], label='kSZ Effect')
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_clusterirps', '143GHz_clusterirps', '217GHz_clusterirps', '353GHz_clusterirps')], label='Infrared cluster point sources')
 plt.xticks(ticks=(0,1,2,3),labels=('100GHz', '143GHz', '217GHz', '353GHz'))
+plt.title('Dipole vector magnitude')
 plt.legend()
 plt.savefig('dipole_strengths')
+
+## Sanity check eq 14 against our approximation, written inline above eq. 18
+cltaudg = np.array([interp1d(ls, cltaug_fiducial_coarse[i,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1)) for i in np.arange(chis.size)])
+lmax_eq14 = maplist.lmax+1
+top_terms = np.zeros(chis.size)
+bottom_terms = 0
+vwindow_ellconst = 2
+for l2 in np.arange(lmax_eq14):
+    for l1 in np.arange(np.abs(l2-vwindow_ellconst),l2+vwindow_ellconst+1):
+        if l1 > lmax_eq14-1 or l1 <2:   #triangle rule
+            continue
+        common_factor = ((2*l1+1)*(2*l2+1)*(2*vwindow_ellconst+1))*wigner_symbol(vwindow_ellconst, l1, l2)**2
+        top_contribution    = common_factor * cltaug_fiducial[l2]*dchis['SMICA']*cltaudg[:,l2] / (maplist.Cls['SMICA'][l1] * maplist.Cls['unWISE'][l2])
+        bottom_contribution = common_factor * ((cltaug_fiducial[l2]*dchis['SMICA'])**2) / (maplist.Cls['SMICA'][l1] * maplist.Cls['unWISE'][l2])
+        if (np.isfinite(top_contribution).sum() == top_contribution.size) and (np.isfinite(bottom_contribution)):
+            top_terms += top_contribution
+            bottom_terms += bottom_contribution
+
+eq14_window_full = top_terms / bottom_terms
+
+ellbar = 2000
+window_v_approximate = cltaudg[:,ellbar] / cltaug_fiducial[ellbar]
+plt.figure(figsize=(6,4))
+plt.plot(zs, dchis['SMICA'] * eq14_window_full, label=r'$\Delta\chi\,W_v\left(\chi\right)$')
+plt.plot(zs, window_v_approximate, label=r'$\left[C_{\ell=\bar{\ell}}^{\dot{\tau}\mathrm{g}}\right]^\mathrm{t}\ /\ \bar{C}^{\tau\mathrm{g}}_{\ell=\bar{\ell}}$')
+plt.plot(zs, 1e3 * galaxy_window, ls='--', c='k', label=r'$\left(10^3\,\mathrm{Mpc}\,W_g\left(z\right)\right)$')
+plt.xlabel('z')
+plt.ylabel('Window')
+plt.xlim(0,1.7)
+plt.ylim(0,1.2)
+plt.legend()
+plt.tight_layout()
+plt.savefig('velocity_window')
+
+
+
 
 
 
@@ -542,6 +581,7 @@ plt.savefig('dipole_strengths')
 # 	m_to_e = np.diagonal(np.flip(bias_e2(zs, (ell+0.5)/chis[::-1]), axis=1))
 # 	Pme[l] = Pmms[:,l] * m_to_e
 # 	Pme_at_chibar[l] = Pmms[zbar_index,l] * m_to_e[zbar_index]
+# 
 # Pme_at_ellbar = Pmms[:,ellbar_ind] * np.diagonal(np.flip(bias_e2(zs, (ls[ellbar_ind]+0.5)/chis[::-1]), axis=1))
 # Pme_at_chibar_at_ellbar = Pmms[zbar_index,ellbar_ind] * np.diagonal(np.flip(bias_e2(zs, (ls[ellbar_ind]+0.5)/chis[::-1]), axis=1))[zbar_index]
 # LHS_eq35 = Pme / Pme_at_ellbar[np.newaxis,:]
@@ -549,50 +589,10 @@ plt.savefig('dipole_strengths')
 # plt.figure()
 # for l, LHSval in enumerate(LHS_eq35):
 # 	plt.semilogy(ls, LHS_eq35[:,l], c='gray',alpha=0.75)
+# 
 # plt.semilogy(ls, RHS_eq35)
 # plt.tight_layout()
 # plt.savefig('eq_35')
-
-
-## Sanity check eq 14 against our approximation, written inline above eq. 18
-cltaudg = np.array([interp1d(ls, cltaug_fiducial_coarse[i,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1)) for i in np.arange(chis.size)])
-lmax_eq14 = maplist.lmax+1
-top_terms = np.zeros(chis.size)
-bottom_terms = 0
-for l2 in np.arange(lmax_eq14):
-    for l1 in np.arange(np.abs(l2-ell),l2+ell+1):
-        if l1 > lmax_eq14-1 or l1 <2:   #triangle rule
-            continue
-        common_factor = ((2*l1+1)*(2*l2+1)*(2*ell+1))*wigner_symbol(ell, l1, l2)**2
-        top_contribution    = common_factor * cltaug_fiducial[l2]*dchis['SMICA']*cltaudg[:,l2] / (maplist.Cls['SMICA'][l1] * maplist.Cls['unWISE'][l2])
-        bottom_contribution = common_factor * ((cltaug_fiducial[l2]*dchis['SMICA'])**2) / (maplist.Cls['SMICA'][l1] * maplist.Cls['unWISE'][l2])
-        if (np.isfinite(top_contribution).sum() == top_contribution.size) and (np.isfinite(bottom_contribution)):
-            top_terms += top_contribution
-            bottom_terms += bottom_contribution
-
-eq14_window_full = top_terms / bottom_terms
-
-plt.figure(figsize=(6,4))
-plotdata = dchis['SMICA'] * eq14_window_full
-plt.plot(zs, plotdata, label=r'$\Delta\chi\,W_v\left(\chi\right)$')
-plt.plot(zs, galaxy_window*1e3, ls='--', c='k', label=r'$\left(10^3\,\mathrm{Mpc}\,W_g\left(z\right)\right)$')
-plt.xlabel('z')
-plt.xlim(0,1.7)
-plt.ylim(0,1.2)
-plt.legend()
-plt.tight_layout()
-plt.savefig('eq14')
-
-
-
-
-
-
-
-
-
-
-
 
 
 
