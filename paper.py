@@ -64,9 +64,9 @@ from scipy.special import spherical_jn as jn
 
 
 class maps(object):
-	def __init__(self):
-		self.nside = 2048
-		self.lmax = 4000
+	def __init__(self, lmax, nside):
+		self.nside = nside
+		self.lmax = lmax
 		self.Cls = {}
 		self.processed_alms = {}
 		self.stored_maps = {}
@@ -224,14 +224,18 @@ def combine_alm(dTlm, dlm, mask, ClTT, Clgg, Cltaudg, Noise, lmax, nside_out, co
     Clgg_filter[:100] = 1e15
     dTlm_xi = hp.almxfl(dTlm, np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0))
     dlm_zeta = hp.almxfl(dlm, np.divide(Cltaudg, Clgg_filter, out=np.zeros_like(Cltaudg), where=Clgg_filter!=0))
-    Tmap_filtered = hp.alm2map(dTlm_xi, lmax=lmax, nside=nside_out) * mask
-    lssmap_filtered = hp.alm2map(dlm_zeta, lmax=lmax, nside=nside_out) * mask
+    Tmap_filtered = hp.alm2map(dTlm_xi, lmax=lmax, nside=nside_out)
+    lssmap_filtered = hp.alm2map(dlm_zeta, lmax=lmax, nside=nside_out)
     outmap_filtered = Tmap_filtered*lssmap_filtered
     outmap = hp.ma(-outmap_filtered * Noise)
     outmap.mask = np.logical_not(mask)
     if convert_K:  # output map has units of K
         outmap /= 2.725
-    return hp.remove_dipole(outmap, fitval=fitval)
+    try:
+    	return hp.remove_dipole(outmap, fitval=fitval)
+    except np.linalg.LinAlgError as e:
+    	print('Error (%s). Reconstruction contains monopole and dipole.' % e)
+    	return outmap, np.nan, (np.nan, np.nan, np.nan)
 
 def bias_e2(z, k):  # Note: matt's code takes in chi and ell in limber approximation replacement for k. Is this OK? Leaving alone for now.
     bstar2 = lambda z : 0.971 - 0.013*z
@@ -270,7 +274,7 @@ def compute_velocity_window(Pmm, m_to_e, galaxy_window, cltt, clgg, cltaug, zs, 
     window_v = np.nan_to_num(  ( chibar**2 / chis**2 ) * ( galaxy_window / galaxy_window[zbar_index] ) * ( (1+zs)**2 / (1+zs[zbar_index])**2 ) * ratio_me_me  )
     return window_v
 
-def compute_common(dTlm, ClTT, Clgg, lmax, nside_out):
+def compute_common_temperature(dTlm, ClTT, Clgg, lmax, nside_out):
 	ClTT_filter = ClTT.copy()[:lmax+1]
 	Clgg_filter = Clgg.copy()[:lmax+1]
 	ClTT_filter[:100] = 1e15
@@ -278,6 +282,17 @@ def compute_common(dTlm, ClTT, Clgg, lmax, nside_out):
 	dTlm_xi = hp.almxfl(dTlm, np.divide(np.ones(ClTT_filter.size), ClTT_filter, out=np.zeros_like(np.ones(ClTT_filter.size)), where=ClTT_filter!=0))
 	Tmap_filtered = hp.alm2map(dTlm_xi, lmax=lmax, nside=nside_out)
 	return ClTT_filter, Clgg_filter, Tmap_filtered
+
+def combine_alm_fast(Tmap_filtered, dlm, mask, ClTT_filter, Clgg_filter, Cltaudg, Noise, lmax, nside_out, convert_K=False, fitval=False):
+    Cltaudg = Cltaudg.copy()[:lmax+1]
+    dlm_zeta = hp.almxfl(dlm, np.divide(Cltaudg, Clgg_filter, out=np.zeros_like(Cltaudg), where=Clgg_filter!=0))
+    lssmap_filtered = hp.alm2map(dlm_zeta, lmax=lmax, nside=nside_out)
+    outmap_filtered = Tmap_filtered*lssmap_filtered
+    outmap = hp.ma(-outmap_filtered * Noise)
+    outmap.mask = np.logical_not(mask)
+    if convert_K:  # output map has units of K
+        outmap /= 2.725
+    return hp.remove_dipole(outmap, fitval=fitval)
     
 ### File Handling
 outdir = 'plots/paper/'
@@ -285,11 +300,9 @@ if not os.path.exists(outdir):
     os.makedirs(outdir)
 
 ### Setup
-maplist = maps()
-# Using Matt's cosmology
 nside=2048
+spectra_lmax = 4000
 kmax=10  #kmax to use
-
 
 pars = camb.CAMBparams(Evolve_baryon_cs=True)
 pars.set_cosmology(H0=67.5, ombh2=0.022, omch2=0.122)
@@ -313,9 +326,6 @@ ibar=250
 zbar=zs[ibar]
 chibar=chis[ibar]
 
-
-
-spectra_lmax = 4000
 fullspectrum_ls = np.unique(np.append(np.geomspace(1,spectra_lmax-1,200).astype(int), spectra_lmax-1))
 
 Pmms = np.zeros((chis.size,fullspectrum_ls.size))
@@ -323,13 +333,6 @@ Pmm_full = camb.get_matter_power_interpolator(pars, nonlinear=True, hubble_units
 for l, ell in enumerate(fullspectrum_ls):  # Do limber approximation: P(z,k) -> P(z, (ell+0.5)/chi )
 	Pmms[:,l] = np.diagonal(np.flip(Pmm_full.P(zs, (ell+0.5)/chis[::-1], grid=True), axis=1))
 
- 
-# thomson_SI = 6.6524e-29
-# m_per_Mpc = 3.086e22
-# ne_0 = 0.16773206895639853  # Average electron density today in 1/m^3
-# taud_window  = (thomson_SI * ne_0 * (1+results.redshift_at_comoving_radial_distance(chis))**2 * m_per_Mpc)[zbar_index]  # Units of 1/Mpc
-
-# Use Matt's taud window? or is his tau and mine should be taud...
 taud_window = (5.18e-7*(1+zs)**2)
 
 ### Windows and spectra
@@ -378,6 +381,7 @@ cltaug_fiducial_mm = interp1d(ls, cltaug_mm_fiducial_coarse[zbar_index,:], bound
 cltaug_dndz_mm = np.array([interp1d(ls, cltaug_mm_dndz_coarse[i,zbar_index,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1)) for i in np.arange(100)])
 
 print('Preprocessing SMICA, COMMANDER, and unWISE maps')
+maplist = maps(lmax=spectra_lmax, nside=nside)
 maplist.processed_alms['SMICA'] = maplist.mask_and_debeam(maplist.input_SMICA, maplist.mask_cmb, maplist.SMICAbeam)
 maplist.processed_alms['COMMANDER'] = maplist.mask_and_debeam(maplist.input_COMMANDER, maplist.mask_cmb, maplist.SMICAbeam)
 
@@ -391,7 +395,6 @@ gdensitymap = (maplist.input_unWISE - n_av) / n_av
 maplist.processed_alms['unWISE'] = maplist.mask_and_debeam(gdensitymap, maplist.mask, np.ones(maplist.mask.size))
 maplist.Cls['unWISE'] = maplist.alm2cl(maplist.processed_alms['unWISE'], maplist.fsky)
 
-
 for key in maplist.map_container:
  	print('    Preprocessing %s' % key)
  	maplist.processed_alms[key] = maplist.mask_and_debeam(maplist.map_container[key], maplist.mask_freq, maplist.beam_container[key])
@@ -399,10 +402,7 @@ for key in maplist.map_container:
  	# maplist.processed_alms[key+'_CIBmask'] = maplist.mask_and_debeam(maplist.map_container[key], maplist.mask_huge, maplist.beam_container[key])
  	# maplist.Cls[key+'_CIBmask'] = maplist.alm2cl(maplist.processed_alms[key+'_CIBmask'], maplist.fsky_huge)
 
-
 ### Velocity
-# windowed velocity should go here since cltaug must be multiplied by bin_width before being used elsewhere
-
 Pmm_at_l2, m_to_e_at_l2 = compute_common_velocity_factors(Pmm_full, zs, chis, spectra_lmax)
 
 print('Computing velocity windows')
@@ -478,23 +478,37 @@ for i in range(len(velocity_compute_ells)):
 print('Processing CMB reconstructions...')
 reconstructions = {}
 noises = {}
+noises_dndz = {}
 recon_Cls = {}
-recon_lmax = 500
+recon_Cls_dndz = {}
+recon_lmax = 150
 
 print('    Computing fiducial reconstructions')
 for CMBtype in ('SMICA', 'COMMANDER'):
+	print('        CMB: ' + CMBtype)
 	noises[CMBtype] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls[CMBtype], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial*dchis[CMBtype])
-	reconstructions[CMBtype] = combine_alm(maplist.processed_alms[CMBtype], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls[CMBtype], maplist.Cls['unWISE'], cltaug_fiducial*dchis[CMBtype], noises['SMICA'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+	noises[CMBtype+'_mm'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls[CMBtype], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial_mm*dchis_mm[CMBtype])
+	reconstructions[CMBtype] = combine_alm(maplist.processed_alms[CMBtype], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls[CMBtype], maplist.Cls['unWISE'], cltaug_fiducial*dchis[CMBtype], noises[CMBtype], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+	reconstructions[CMBtype+'_mm'] = combine_alm(maplist.processed_alms[CMBtype], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls[CMBtype], maplist.Cls['unWISE'], cltaug_fiducial_mm*dchis_mm[CMBtype], noises[CMBtype+'_mm'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
 	recon_Cls[CMBtype] = maplist.alm2cl(hp.map2alm(reconstructions[CMBtype], lmax=recon_lmax), maplist.fsky)
+	recon_Cls[CMBtype+'_mm'] = maplist.alm2cl(hp.map2alm(reconstructions[CMBtype+'_mm'], lmax=recon_lmax), maplist.fsky)
+	noises_dndz[CMBtype] = np.zeros(100)
+	noises_dndz[CMBtype+'_mm'] = np.zeros(100)
+	recon_Cls_dndz[CMBtype] = np.zeros((100, recon_lmax+1))
+	recon_Cls_dndz[CMBtype+'_mm'] = np.zeros((100, recon_lmax+1))
+	ClTT_filter, Clgg_filter, Tmap_filtered = compute_common_temperature(maplist.processed_alms[CMBtype], maplist.Cls[CMBtype], maplist.Cls['unWISE'], maplist.lmax, maplist.nside)
+	for i in np.arange(100):
+		if i % 10 == 1:
+			print('            %d of 100' % i)
+		noises_dndz[CMBtype][i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls[CMBtype], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz[i,:]*dchis_dndz[CMBtype][i])
+		noises_dndz[CMBtype+'_mm'][i] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls[CMBtype], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_dndz_mm[i,:]*dchis_dndz_mm[CMBtype][i])
+		recon_store = combine_alm_fast(Tmap_filtered, maplist.processed_alms['unWISE'], maplist.mask, ClTT_filter, Clgg_filter, cltaug_dndz[i,:]*dchis_dndz[CMBtype][i], noises_dndz[CMBtype][i], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+		recon_Cls_dndz[CMBtype][i] = maplist.alm2cl(hp.map2alm(recon_store, lmax=recon_lmax), maplist.fsky)
+		recon_store = combine_alm_fast(Tmap_filtered, maplist.processed_alms['unWISE'], maplist.mask, ClTT_filter, Clgg_filter, cltaug_dndz_mm[i,:]*dchis_dndz_mm[CMBtype][i], noises_dndz[CMBtype+'_mm'][i], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
+		recon_Cls_dndz[CMBtype+'_mm'][i] = maplist.alm2cl(hp.map2alm(recon_store, lmax=recon_lmax), maplist.fsky)
 
 recon_Cls['SMICAxCOMMANDER'] = hp.alm2cl(hp.map2alm(reconstructions['SMICA'], lmax=recon_lmax), hp.map2alm(reconstructions['COMMANDER'], lmax=recon_lmax)) / maplist.fsky
-# noises['SMICA_mm'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['SMICA'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial_mm*dchis_mm['SMICA'])
-# noises['COMMANDER_mm'] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls['COMMANDER'], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial_mm*dchis_mm['COMMANDER'])
-# reconstructions['SMICA_mm'] = combine_alm(maplist.processed_alms['SMICA'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['SMICA'], maplist.Cls['unWISE'], cltaug_fiducial_mm*dchis_mm['SMICA'], noises['SMICA_mm'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
-# reconstructions['COMMANDER_mm'] = combine_alm(maplist.processed_alms['COMMANDER'], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls['COMMANDER'], maplist.Cls['unWISE'], cltaug_fiducial_mm*dchis_mm['COMMANDER'], noises['COMMANDER_mm'], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False)
-# recon_Cls['SMICAxCOMMANDER_mm'] = hp.alm2cl(hp.map2alm(reconstructions['SMICA_mm'], lmax=recon_lmax), hp.map2alm(reconstructions['COMMANDER_mm'], lmax=recon_lmax)) / maplist.fsky
-# recon_Cls['SMICA_mm'] = maplist.alm2cl(hp.map2alm(reconstructions['SMICA_mm'], lmax=recon_lmax), maplist.fsky)
-# recon_Cls['COMMANDER_mm'] = maplist.alm2cl(hp.map2alm(reconstructions['COMMANDER_mm'], lmax=recon_lmax), maplist.fsky)
+recon_Cls['SMICAxCOMMANDER_mm'] = hp.alm2cl(hp.map2alm(reconstructions['SMICA_mm'], lmax=recon_lmax), hp.map2alm(reconstructions['COMMANDER_mm'], lmax=recon_lmax)) / maplist.fsky
 
 monopoles = {}
 dipoles = {}
@@ -505,10 +519,120 @@ for freq in ('100GHz', '143GHz', '217GHz', '353GHz'):
 	for case in ('', '_noSMICA', '_thermaldust', '_freefree', '_synchrotron', '_spindust', '_kineticsz', '_clusterirps'):
 		key = freq+case
 		print('       Reconstructing ' + key)
-		reconstructions[key], monopoles[key], dipoles[key] = combine_alm(maplist.processed_alms[key], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls[freq], maplist.Cls['unWISE'], cltaug_fiducial*dchis[freq], noises[freq], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False, fitval=True)
-		recon_Cls[key] = maplist.alm2cl(hp.map2alm(reconstructions[key], lmax=recon_lmax), maplist.fsky)
+		recon_store, monopoles[key], dipoles[key] = combine_alm(maplist.processed_alms[key], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls[freq], maplist.Cls['unWISE'], cltaug_fiducial*dchis[freq], noises[freq], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False, fitval=True)
+		recon_Cls[key] = maplist.alm2cl(hp.map2alm(recon_store, lmax=recon_lmax), maplist.fsky)
 
 
+
+
+
+
+
+maplist.input_T100_co = fits.open('data/planck_data_testing/foregrounds/COM_SimMap_co-ffp10-skyinbands-100_2048_R3.00_full.fits')[1].data['UNKNOWN1'].flatten()
+maplist.input_T143_co = fits.open('data/planck_data_testing/foregrounds/COM_SimMap_co-ffp10-skyinbands-143_2048_R3.00_full.fits')[1].data['UNKNOWN1'].flatten()  / 2.7255
+maplist.input_T217_co = np.ones(maplist.input_T143_co.size)  *  np.nan  # for iteration completion, data not provided by Planck
+maplist.input_T353_co = fits.open('data/planck_data_testing/foregrounds/COM_SimMap_co-ffp10-skyinbands-353_2048_R3.00_full.fits')[1].data['UNKNOWN1'].flatten()  / 2.7255
+maplist.input_T100_faintirps = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_faintirps-ffp10-skyinbands-100_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)
+maplist.input_T143_faintirps = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_faintirps-ffp10-skyinbands-143_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)  / 2.7255
+maplist.input_T217_faintirps = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_faintirps-ffp10-skyinbands-217_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)  / 2.7255
+maplist.input_T353_faintirps = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_faintirps-ffp10-skyinbands-353_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)  / 2.7255
+maplist.input_T100_faintradiops = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_faintradiops-ffp10-skyinbands-100_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)
+maplist.input_T143_faintradiops = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_faintradiops-ffp10-skyinbands-143_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)  / 2.7255
+maplist.input_T217_faintradiops = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_faintradiops-ffp10-skyinbands-217_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)  / 2.7255
+maplist.input_T353_faintradiops = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_faintradiops-ffp10-skyinbands-353_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)  / 2.7255
+maplist.input_T100_strongirps = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_strongirps-ffp10-skyinbands-100_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)
+maplist.input_T143_strongirps = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_strongirps-ffp10-skyinbands-143_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)  / 2.7255
+maplist.input_T217_strongirps = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_strongirps-ffp10-skyinbands-217_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)  / 2.7255
+maplist.input_T353_strongirps = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_strongirps-ffp10-skyinbands-353_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)  / 2.7255
+maplist.input_T100_strongradiops = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_strongradiops-ffp10-skyinbands-100_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)
+maplist.input_T143_strongradiops = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_strongradiops-ffp10-skyinbands-143_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)  / 2.7255
+maplist.input_T217_strongradiops = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_strongradiops-ffp10-skyinbands-217_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)  / 2.7255
+maplist.input_T353_strongradiops = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_strongradiops-ffp10-skyinbands-353_4096_R3.00_full.fits')[1].data['TEMPERATURE'].flatten(), nside)  / 2.7255
+maplist.input_T100_stronguchii = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_stronguchii-ffp10-skyinbands-100_4096_R3.00_full.fits')[1].data['UNKNOWN1'].flatten(), nside)
+maplist.input_T143_stronguchii = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_stronguchii-ffp10-skyinbands-143_4096_R3.00_full.fits')[1].data['UNKNOWN1'].flatten(), nside)  / 2.7255
+maplist.input_T217_stronguchii = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_stronguchii-ffp10-skyinbands-217_4096_R3.00_full.fits')[1].data['UNKNOWN1'].flatten(), nside)  / 2.7255
+maplist.input_T353_stronguchii = hp.ud_grade(fits.open('data/planck_data_testing/foregrounds/COM_SimMap_stronguchii-ffp10-skyinbands-353_4096_R3.00_full.fits')[1].data['UNKNOWN1'].flatten(), nside)  / 2.7255
+
+
+maplist.map_container['100GHz_co'] = maplist.input_T100_co
+maplist.map_container['143GHz_co'] = maplist.input_T143_co
+maplist.map_container['217GHz_co'] = maplist.input_T217_co
+maplist.map_container['353GHz_co'] = maplist.input_T353_co
+maplist.map_container['100GHz_faintirps'] = maplist.input_T100_faintirps
+maplist.map_container['143GHz_faintirps'] = maplist.input_T143_faintirps
+maplist.map_container['217GHz_faintirps'] = maplist.input_T217_faintirps
+maplist.map_container['353GHz_faintirps'] = maplist.input_T353_faintirps
+maplist.map_container['100GHz_faintradiops'] = maplist.input_T100_faintradiops
+maplist.map_container['143GHz_faintradiops'] = maplist.input_T143_faintradiops
+maplist.map_container['217GHz_faintradiops'] = maplist.input_T217_faintradiops
+maplist.map_container['353GHz_faintradiops'] = maplist.input_T353_faintradiops
+maplist.map_container['100GHz_strongirps'] = maplist.input_T100_strongirps
+maplist.map_container['143GHz_strongirps'] = maplist.input_T143_strongirps
+maplist.map_container['217GHz_strongirps'] = maplist.input_T217_strongirps
+maplist.map_container['353GHz_strongirps'] = maplist.input_T353_strongirps
+maplist.map_container['100GHz_strongradiops'] = maplist.input_T100_strongradiops
+maplist.map_container['143GHz_strongradiops'] = maplist.input_T143_strongradiops
+maplist.map_container['217GHz_strongradiops'] = maplist.input_T217_strongradiops
+maplist.map_container['353GHz_strongradiops'] = maplist.input_T353_strongradiops
+maplist.map_container['100GHz_stronguchii'] = maplist.input_T100_stronguchii
+maplist.map_container['143GHz_stronguchii'] = maplist.input_T143_stronguchii
+maplist.map_container['217GHz_stronguchii'] = maplist.input_T217_stronguchii
+maplist.map_container['353GHz_stronguchii'] = maplist.input_T353_stronguchii
+
+
+maplist.beam_container = { ID : {'100' : maplist.T100beam, '143' : maplist.T143beam, '217' : maplist.T217beam, '353' : maplist.T353beam}[ID[:3]] for ID in maplist.map_container}
+
+mask_ps_100 = hp.reorder(fits.open('data/masks/planck/HFI_Mask_PointSrc_2048_R2.00.fits')[1].data['F100'],n2r=True)
+mask_ps_143 = hp.reorder(fits.open('data/masks/planck/HFI_Mask_PointSrc_2048_R2.00.fits')[1].data['F143'],n2r=True)
+mask_ps_217 = hp.reorder(fits.open('data/masks/planck/HFI_Mask_PointSrc_2048_R2.00.fits')[1].data['F217'],n2r=True)
+mask_ps_353 = hp.reorder(fits.open('data/masks/planck/HFI_Mask_PointSrc_2048_R2.00.fits')[1].data['F353'],n2r=True)
+
+
+
+masks = {'100GHz' : maplist.mask * mask_ps_100, '143GHz' : maplist.mask * mask_ps_143, '217GHz' : maplist.mask * mask_ps_217, '353GHz' : maplist.mask * mask_ps_353}
+masks_fsky = {key : sum(masks[key]) / masks[key].size for key in masks}
+masks_freq = {'100GHz' : maplist.mask_freq * mask_ps_100, '143GHz' : maplist.mask_freq * mask_ps_143, '217GHz' : maplist.mask_freq * mask_ps_217, '353GHz' : maplist.mask_freq * mask_ps_353}
+masks_freq_fsky = {key : sum(masks_freq[key]) / masks_freq[key].size for key in masks_freq}
+
+for freq in ('100GHz', '143GHz', '217GHz', '353GHz'):
+	noises[freq] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls[freq], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial*dchis[freq])
+	for case in ('', '_noSMICA', '_thermaldust', '_freefree', '_synchrotron', '_spindust', '_kineticsz', '_clusterirps', '_co', '_faintirps', '_faintradiops', '_strongirps', '_strongradiops', '_stronguchii'):
+		key = freq+case
+		if key in recon_Cls.keys():
+			continue
+		print('    Preprocessing %s' % key)
+		#maplist.processed_alms[key] = maplist.mask_and_debeam(maplist.map_container[key], maplist.mask_freq, maplist.beam_container[key])
+		maplist.processed_alms[key] = maplist.mask_and_debeam(maplist.map_container[key], masks_freq[freq], maplist.beam_container[key])
+		#maplist.Cls[key] = maplist.alm2cl(maplist.processed_alms[key], maplist.fsky_freq)
+		maplist.Cls[key] = maplist.alm2cl(maplist.processed_alms[key], masks_freq_fsky[freq])
+		print('       Reconstructing ' + key)
+		#recon_store, monopoles[key], dipoles[key] = combine_alm(maplist.processed_alms[key], maplist.processed_alms['unWISE'], maplist.mask, maplist.Cls[freq], maplist.Cls['unWISE'], cltaug_fiducial*dchis[freq], noises[freq], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False, fitval=True)
+		recon_store, monopoles[key], dipoles[key] = combine_alm(maplist.processed_alms[key], maplist.processed_alms['unWISE'], masks[freq], maplist.Cls[freq], maplist.Cls['unWISE'], cltaug_fiducial*dchis[freq], noises[freq], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False, fitval=True)
+		#recon_Cls[key] = maplist.alm2cl(hp.map2alm(recon_store, lmax=recon_lmax), maplist.fsky)
+		recon_Cls[key] = maplist.alm2cl(hp.map2alm(recon_store, lmax=recon_lmax), masks_fsky[freq])
+
+
+
+
+for freq in ('100GHz', '143GHz', '217GHz', '353GHz'):
+	noises[freq] = Noise_vr_diag(lmax=ls.max(), alpha=0, gamma=0, ell=2, cltt=maplist.Cls[freq], clgg_binned=maplist.Cls['unWISE'], cltaudg_binned=cltaug_fiducial*dchis[freq])
+	maplist.processed_alms[freq+'_foreground_sum'] = maplist.mask_and_debeam(maplist.map_container[freq+'_thermaldust']       \
+																	 + maplist.map_container[freq+'_freefree']          \
+																	 + maplist.map_container[freq+'_synchrotron']       \
+																	 + maplist.map_container[freq+'_spindust']          \
+																	 + maplist.map_container[freq+'_kineticsz']         \
+																	 + maplist.map_container[freq+'_clusterirps']       \
+																	 + np.nan_to_num(maplist.map_container[freq+'_co']) \
+																	 + maplist.map_container[freq+'_faintirps']         \
+																	 + maplist.map_container[freq+'_faintradiops']      \
+																	 + maplist.map_container[freq+'_strongirps']        \
+																	 + maplist.map_container[freq+'_strongradiops']     \
+																	 + maplist.map_container[freq+'_stronguchii']       \
+																													, masks_freq[freq], maplist.beam_container[freq])
+	maplist.Cls[freq+'_foreground_sum'] = maplist.alm2cl(maplist.processed_alms[freq+'_foreground_sum'], masks_freq_fsky[freq])
+	print('       Reconstructing ' + 'foreground_sum')
+	reconstructions[freq+'_foreground_sum'], monopoles[freq+'_foreground_sum'], dipoles[freq+'_foreground_sum'] = combine_alm(maplist.processed_alms[freq+'_foreground_sum'], maplist.processed_alms['unWISE'], masks[freq], maplist.Cls[freq], maplist.Cls['unWISE'], cltaug_fiducial*dchis[freq], noises[freq], lmax=maplist.lmax, nside_out=maplist.nside, convert_K=False, fitval=True)
+	recon_Cls[freq+'_foreground_sum'] = maplist.alm2cl(hp.map2alm(reconstructions[freq+'_foreground_sum'], lmax=recon_lmax), masks_fsky[freq])
 
 
 # Plots
@@ -529,46 +653,87 @@ ax2.semilogy(velocity_compute_ells, clv_windowed['COMMANDER'])
 ax2.set_ylim(y1,y2)
 plt.savefig('fiducial_reconstructions')
 
+manycolors = ['#5094a4', '#37b5a2', '#c4ef23', '#a77e51', '#61a4d3', '#5fe6b0', '#dc3925', '#3733eb', '#fc9ec8', '#924bbc', '#77917f', '#23da0a', '#bf073a', '#c42d99']
 fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2,2,figsize=(12,12))
 ax = (ax1,ax2,ax3,ax4)
 for i, key in enumerate(freq_keys[2:]):
-	for case in ('', '_noSMICA', '_thermaldust', '_freefree', '_synchrotron', '_spindust', '_kineticsz', '_clusterirps'):
+	for j, case in enumerate(('', '_noSMICA', '_thermaldust', '_freefree', '_synchrotron', '_spindust', '_kineticsz', '_clusterirps', '_co', '_faintirps', '_faintradiops', '_strongirps', '_strongradiops', '_stronguchii')):
+		ax[i].semilogy(np.arange(152)[2:150], recon_Cls[key+case][2:150], label=key+case, c=manycolors[j])
+	ax[i].semilogy(np.repeat(noises[key],148),ls='--',c='k')
+	ax[i].legend()
+	ax[i].set_title(key)
+
+plt.savefig('frequency_reconstructions_all')
+
+
+
+fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2,2,figsize=(12,12))
+ax = (ax1,ax2,ax3,ax4)
+for i, key in enumerate(freq_keys[2:]):
+	for j, case in enumerate(('', '_noSMICA', '_foreground_sum')):
 		ax[i].semilogy(np.arange(152)[2:150], recon_Cls[key+case][2:150], label=key+case)
 	ax[i].semilogy(np.repeat(noises[key],148),ls='--',c='k')
 	ax[i].legend()
 	ax[i].set_title(key)
 
-plt.savefig('frequency_reconstructions')
+plt.savefig('frequency_reconstructions_summed')
+
+
+fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2,2,figsize=(12,12))
+ax = (ax1,ax2,ax3,ax4)
+for i, key in enumerate(freq_keys[2:]):
+	for j, case in enumerate(('', '_noSMICA', '_thermaldust', '_clusterirps', '_faintradiops', '_strongirps', '_strongradiops')):
+		if (key+case)=='353GHz_faintradiops':
+			continue
+		ax[i].semilogy(np.arange(152)[2:150], recon_Cls[key+case][2:150], label=key+case)
+	ax[i].semilogy(np.repeat(noises[key],148),ls='--',c='k')
+	ax[i].legend()
+	ax[i].set_title(key)
+
+plt.savefig('frequency_reconstructions_main')
+
 
 
 plt.figure()
-plt.plot([monopoles[key] for key in ('100GHz', '143GHz', '217GHz', '353GHz')], label='Total')
-plt.plot([monopoles[key] for key in ('100GHz_noSMICA', '143GHz_noSMICA', '217GHz_noSMICA', '353GHz_noSMICA')], label='All foregrounds')
-plt.plot([monopoles[key] for key in ('100GHz_thermaldust', '143GHz_thermaldust', '217GHz_thermaldust', '353GHz_thermaldust')], label='Thermal dust')
-plt.plot([monopoles[key] for key in ('100GHz_freefree', '143GHz_freefree', '217GHz_freefree', '353GHz_freefree')], label='Free-free emission')
-plt.plot([monopoles[key] for key in ('100GHz_synchrotron', '143GHz_synchrotron', '217GHz_synchrotron', '353GHz_synchrotron')], label='Synchrotron radiation')
-plt.plot([monopoles[key] for key in ('100GHz_spindust', '143GHz_spindust', '217GHz_spindust', '353GHz_spindust')], label='Spinning dust emission')
-plt.plot([monopoles[key] for key in ('100GHz_kineticsz', '143GHz_kineticsz', '217GHz_kineticsz', '353GHz_kineticsz')], label='kSZ Effect')
-plt.plot([monopoles[key] for key in ('100GHz_clusterirps', '143GHz_clusterirps', '217GHz_clusterirps', '353GHz_clusterirps')], label='Infrared cluster point sources')
+plt.plot([monopoles[key] for key in ('100GHz', '143GHz', '217GHz', '353GHz')], label='Total', c=manycolors[0])
+plt.plot([monopoles[key] for key in ('100GHz_noSMICA', '143GHz_noSMICA', '217GHz_noSMICA', '353GHz_noSMICA')], label='All foregrounds', c=manycolors[1])
+plt.plot([monopoles[key] for key in ('100GHz_thermaldust', '143GHz_thermaldust', '217GHz_thermaldust', '353GHz_thermaldust')], label='Thermal dust', c=manycolors[2])
+plt.plot([monopoles[key] for key in ('100GHz_freefree', '143GHz_freefree', '217GHz_freefree', '353GHz_freefree')], label='Free-free emission', c=manycolors[3])
+plt.plot([monopoles[key] for key in ('100GHz_synchrotron', '143GHz_synchrotron', '217GHz_synchrotron', '353GHz_synchrotron')], label='Synchrotron radiation', c=manycolors[4])
+plt.plot([monopoles[key] for key in ('100GHz_spindust', '143GHz_spindust', '217GHz_spindust', '353GHz_spindust')], label='Spinning dust emission', c=manycolors[5])
+plt.plot([monopoles[key] for key in ('100GHz_kineticsz', '143GHz_kineticsz', '217GHz_kineticsz', '353GHz_kineticsz')], label='kSZ Effect', c=manycolors[6])
+plt.plot([monopoles[key] for key in ('100GHz_clusterirps', '143GHz_clusterirps', '217GHz_clusterirps', '353GHz_clusterirps')], label='clusterirps', c=manycolors[7])
+plt.plot([monopoles[key] for key in ('100GHz_co', '143GHz_co', '217GHz_co', '353GHz_co')], label='CO', c=manycolors[8])
+plt.plot([monopoles[key] for key in ('100GHz_faintirps', '143GHz_faintirps', '217GHz_faintirps', '353GHz_faintirps')], label='faintirps', c=manycolors[9])
+plt.plot([monopoles[key] for key in ('100GHz_faintradiops', '143GHz_faintradiops', '217GHz_faintradiops', '353GHz_faintradiops')], label='faintradiops', c=manycolors[10])
+plt.plot([monopoles[key] for key in ('100GHz_strongirps', '143GHz_strongirps', '217GHz_strongirps', '353GHz_strongirps')], label='strongirps', c=manycolors[11])
+plt.plot([monopoles[key] for key in ('100GHz_strongradiops', '143GHz_strongradiops', '217GHz_strongradiops', '353GHz_strongradiops')], label='strongradiops', c=manycolors[12])
+plt.plot([monopoles[key] for key in ('100GHz_stronguchii', '143GHz_stronguchii', '217GHz_stronguchii', '353GHz_stronguchii')], label='stronguchii', c=manycolors[13])
 plt.xticks(ticks=(0,1,2,3),labels=('100GHz', '143GHz', '217GHz', '353GHz'))
 plt.title('Monopole magnitude')
 plt.legend()
-plt.savefig('monopoles')
+plt.savefig('monopoles_all')
 
 
 plt.figure()
-plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz', '143GHz', '217GHz', '353GHz')], label='Total')
-plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_noSMICA', '143GHz_noSMICA', '217GHz_noSMICA', '353GHz_noSMICA')], label='All foregrounds')
-plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_thermaldust', '143GHz_thermaldust', '217GHz_thermaldust', '353GHz_thermaldust')], label='Thermal dust')
-plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_freefree', '143GHz_freefree', '217GHz_freefree', '353GHz_freefree')], label='Free-free emission')
-plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_synchrotron', '143GHz_synchrotron', '217GHz_synchrotron', '353GHz_synchrotron')], label='Synchrotron radiation')
-plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_spindust', '143GHz_spindust', '217GHz_spindust', '353GHz_spindust')], label='Spinning dust emission')
-plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_kineticsz', '143GHz_kineticsz', '217GHz_kineticsz', '353GHz_kineticsz')], label='kSZ Effect')
-plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_clusterirps', '143GHz_clusterirps', '217GHz_clusterirps', '353GHz_clusterirps')], label='Infrared cluster point sources')
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz', '143GHz', '217GHz', '353GHz')], label='Total', c=manycolors[0])
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_noSMICA', '143GHz_noSMICA', '217GHz_noSMICA', '353GHz_noSMICA')], label='All foregrounds', c=manycolors[1])
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_thermaldust', '143GHz_thermaldust', '217GHz_thermaldust', '353GHz_thermaldust')], label='Thermal dust', c=manycolors[2])
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_freefree', '143GHz_freefree', '217GHz_freefree', '353GHz_freefree')], label='Free-free emission', c=manycolors[3])
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_synchrotron', '143GHz_synchrotron', '217GHz_synchrotron', '353GHz_synchrotron')], label='Synchrotron radiation', c=manycolors[4])
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_spindust', '143GHz_spindust', '217GHz_spindust', '353GHz_spindust')], label='Spinning dust emission', c=manycolors[5])
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_kineticsz', '143GHz_kineticsz', '217GHz_kineticsz', '353GHz_kineticsz')], label='kSZ Effect', c=manycolors[6])
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_clusterirps', '143GHz_clusterirps', '217GHz_clusterirps', '353GHz_clusterirps')], label='clusterirps', c=manycolors[7])
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_co', '143GHz_co', '217GHz_co', '353GHz_co')], label='CO', c=manycolors[8])
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_faintirps', '143GHz_faintirps', '217GHz_faintirps', '353GHz_faintirps')], label='faintirps', c=manycolors[9])
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_faintradiops', '143GHz_faintradiops', '217GHz_faintradiops', '353GHz_faintradiops')], label='faintradiops', c=manycolors[10])
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_strongirps', '143GHz_strongirps', '217GHz_strongirps', '353GHz_strongirps')], label='strongirps', c=manycolors[11])
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_strongradiops', '143GHz_strongradiops', '217GHz_strongradiops', '353GHz_strongradiops')], label='strongradiops', c=manycolors[12])
+plt.plot([np.linalg.norm(dipoles[key]) for key in ('100GHz_stronguchii', '143GHz_stronguchii', '217GHz_stronguchii', '353GHz_stronguchii')], label='stronguchii', c=manycolors[13])
 plt.xticks(ticks=(0,1,2,3),labels=('100GHz', '143GHz', '217GHz', '353GHz'))
 plt.title('Dipole vector magnitude')
 plt.legend()
-plt.savefig('dipole_strengths')
+plt.savefig('dipole_strengths_all')
 
 ## Sanity check eq 14 against our approximation, written inline above eq. 18
 cltaudg = np.array([interp1d(ls, cltaug_fiducial_coarse[i,:], bounds_error=False, fill_value='extrapolate')(np.arange(maplist.lmax+1)) for i in np.arange(chis.size)])
