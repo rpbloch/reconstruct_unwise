@@ -1,4 +1,5 @@
 __pycache__/
+plot_bak/
 data/
 plots/
 output/
@@ -67,3 +68,20 @@ monopoles_fiducialmask.png
 monopoles_fiducial-with-ptsrcmasks.png
 monopoles.png
 velocity_window.png
+HFI_SkyMap_353-psb-field-IQU_2048_R3.00_full.fits
+dipole_strengths_all.png
+fiducial_reconstructions.png
+frequency_reconstructions_353GHz.png
+frequency_reconstructions_all.png
+frequency_reconstructions_main.png
+frequency_reconstructions_summed_no4096.png
+frequency_reconstructions_summed_nops.png
+frequency_reconstructions_summed_nostrongradiops.png
+frequency_reconstructions_summed.png
+mask_freq.png
+mask_recon.png
+monopoles_all.png
+test_353_thermal_contribution.png
+test.png
+tttt.png
+cltaug_fiducial.npy
