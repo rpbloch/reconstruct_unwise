@@ -1085,11 +1085,11 @@ hp.projplot(thetas['COMMANDER'],phis['COMMANDER'],'-',lw=5,color='b',lonlat=True
 #hp.projplot(thetas['SMICA'][54:],phis['SMICA'][54:],'-',lw=5,color='g',lonlat=True,rot=(np.degrees(lon_mean['SMICA']),180-np.degrees(lat_mean['SMICA']),0))   # rotate: south pole counts as 0 latitude for rot keyword
 hp.projplot(thetas['SMICA'],phis['SMICA'],'-',lw=5,color='g',lonlat=True,rot=(np.degrees(lon_mean['SMICA']),181.15-np.degrees(lat_mean['SMICA']),0))   # rotate: south pole counts as 0 latitude for rot keyword
 hp.projplot(thetas['100GHz'],phis['100GHz'],'-',lw=5,color='m',lonlat=True,rot=(np.degrees(lon_mean['100GHz']),180-np.degrees(lat_mean['100GHz']),0))   # rotate: south pole counts as 0 latitude for rot keyword
-for i in np.arange(1000):
-	print(i)
-	_ = hp.projplot(hp.vec2ang(dipoles['COMMANDER'][i,:])[0][0],hp.vec2ang(dipoles['COMMANDER'][i,:])[1][0], 'bx',ms=8,mew=.5,zorder=101,alpha=0.5)
-	_ = hp.projplot(hp.vec2ang(dipoles['SMICA'][i,:])[0][0],hp.vec2ang(dipoles['SMICA'][i,:])[1][0], 'gx',ms=8,mew=.5,zorder=101,alpha=0.5)
-	_ = hp.projplot(hp.vec2ang(dipoles['100GHz'][i,:])[0][0],hp.vec2ang(dipoles['100GHz'][i,:])[1][0], 'mx',ms=8,mew=.5,zorder=101,alpha=0.5)
+## UNCOMMENT BELOW FOR ALL DIPOLE REALIZATIONS. SLOW TO PLOT.
+# for i in np.arange(1000):
+# 	_ = hp.projplot(hp.vec2ang(dipoles['COMMANDER'][i,:])[0][0],hp.vec2ang(dipoles['COMMANDER'][i,:])[1][0], 'bx',ms=8,mew=.5,zorder=101,alpha=0.5)
+# 	_ = hp.projplot(hp.vec2ang(dipoles['SMICA'][i,:])[0][0],hp.vec2ang(dipoles['SMICA'][i,:])[1][0], 'gx',ms=8,mew=.5,zorder=101,alpha=0.5)
+# 	_ = hp.projplot(hp.vec2ang(dipoles['100GHz'][i,:])[0][0],hp.vec2ang(dipoles['100GHz'][i,:])[1][0], 'mx',ms=8,mew=.5,zorder=101,alpha=0.5)
 
 plt.savefig(outdir+'dipole_Planck_nocircle')
 
